@@ -7,7 +7,8 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use crate::{
-    context::build_context, index::CodeIndex, search::search_index, workspace::resolve_root,
+    context::build_context, index::CodeIndex, search::search_index, structural::StructuralIndex,
+    workspace::resolve_root,
 };
 
 pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
@@ -55,7 +56,7 @@ pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
                             "version": env!("CARGO_PKG_VERSION")
                         },
                         "instructions":
-                            "Use code_context before broad repository exploration. Use code_search for repository-wide search."
+                            "Use code_context before broad repository exploration, code_search for lexical search, and code_symbol to inspect definitions, callers, callees and references."
                     }),
                 )
             }
@@ -90,7 +91,8 @@ fn tools_list() -> Value {
         "tools": [
             {
                 "name": "code_search",
-                "description": "Search repository source text using persistent lexical indexing.",
+                "description":
+                    "Search repository source text using the persistent lexical/trigram index.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -113,11 +115,16 @@ fn tools_list() -> Value {
                     },
                     "required": ["query"],
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false
                 }
             },
             {
                 "name": "code_context",
-                "description": "Return ranked files relevant to a coding task before broad repository exploration.",
+                "description":
+                    "Return ranked repository files relevant to a coding task before broad exploration.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -136,6 +143,36 @@ fn tools_list() -> Value {
                     },
                     "required": ["task"],
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false
+                }
+            },
+            {
+                "name": "code_symbol",
+                "description":
+                    "Inspect a structural symbol using Tree-sitter. Returns definitions, resolved callers, resolved callees and related references.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description":
+                                "Exact symbol name to inspect."
+                        },
+                        "path": {
+                            "type": "string",
+                            "description":
+                                "Repository path. Defaults to the current agent workspace."
+                        }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false
                 }
             }
         ]
@@ -161,7 +198,7 @@ fn call_tool(params: &Value, default_path: Option<PathBuf>) -> Result<Value> {
 
     let root = resolve_root(requested_path)?;
 
-    let index = CodeIndex::ensure(&root)?;
+    let lexical = CodeIndex::ensure(&root)?;
 
     let text = match name {
         "code_search" => {
@@ -181,7 +218,7 @@ fn call_tool(params: &Value, default_path: Option<PathBuf>) -> Result<Value> {
                 .unwrap_or(50)
                 .clamp(1, 200) as usize;
 
-            let hits = search_index(&index, query, regex, limit)?;
+            let hits = search_index(&lexical, query, regex, limit)?;
 
             serde_json::to_string_pretty(&hits)?
         }
@@ -198,9 +235,22 @@ fn call_tool(params: &Value, default_path: Option<PathBuf>) -> Result<Value> {
                 .unwrap_or(10)
                 .clamp(1, 50) as usize;
 
-            let bundle = build_context(&index, task, limit)?;
+            let bundle = build_context(&lexical, task, limit)?;
 
             serde_json::to_string_pretty(&bundle)?
+        }
+
+        "code_symbol" => {
+            let symbol_name = arguments
+                .get("name")
+                .and_then(Value::as_str)
+                .context("code_symbol requires name")?;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let view = structural.lookup_symbol(symbol_name);
+
+            serde_json::to_string_pretty(&view)?
         }
 
         _ => {

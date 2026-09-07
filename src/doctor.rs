@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::index::index_path;
+use crate::{index::index_path, structural::structural_path};
 
 #[derive(Debug, Serialize)]
 pub struct DoctorCheck {
@@ -23,16 +23,28 @@ pub fn run(root: &Path) -> Result<Vec<DoctorCheck>> {
         command_check("codex"),
     ];
 
-    let index = index_path(root);
+    let lexical = index_path(root);
 
     checks.push(DoctorCheck {
-        name: "index".into(),
-        status: if index.exists() {
+        name: "lexical_index".into(),
+        status: if lexical.exists() {
             "ok".into()
         } else {
             "missing".into()
         },
-        detail: index.display().to_string(),
+        detail: lexical.display().to_string(),
+    });
+
+    let structural = structural_path(root);
+
+    checks.push(DoctorCheck {
+        name: "structural_index".into(),
+        status: if structural.exists() {
+            "ok".into()
+        } else {
+            "missing".into()
+        },
+        detail: structural.display().to_string(),
     });
 
     checks.push(DoctorCheck {

@@ -1,35 +1,52 @@
 ---
 name: codeintel
-description: Repository navigation, indexed code search and context retrieval using CodeIntel.
+description: Repository navigation, indexed lexical search and Tree-sitter structural code intelligence using CodeIntel.
 ---
 
 # CodeIntel
 
-Use CodeIntel as the preferred first-pass repository discovery layer.
+Use CodeIntel as the preferred first-pass repository intelligence layer.
 
-## Start of coding task
+## Start of a coding task
 
 Before broad repository exploration, call `code_context` with the user's task.
 
-## Repository-wide search
+Use the result to identify likely files.
 
-Use `code_search` when locating:
+## Repository-wide text search
 
+Use `code_search` for:
+
+- exact text
 - symbols
-- function names
 - constants
 - configuration values
 - error messages
-- textual references
-- regex patterns
+- regex searches
+
+## Structural inspection
+
+When a concrete function, class, method, type or module becomes relevant,
+call `code_symbol`.
+
+`code_symbol` can provide:
+
+- definitions
+- callers
+- callees
+- references
+- resolution status
+
+Treat ambiguous and unresolved references as uncertainty, not facts.
 
 ## Fallback
 
 Native Grep, Glob, Read, rg, git and LSP remain valid when:
 
-- CodeIntel returns no useful result
-- the query concerns a known small file
-- semantic precision is required
+- CodeIntel returns insufficient results
+- a known small file is being inspected
+- compiler-grade semantic resolution is needed
+- dynamic dispatch or dependency injection matters
 - CodeIntel reports an error
 
-The current CodeIntel MVP provides lexical retrieval and task ranking.
+Never represent the current structural graph as compiler-complete.

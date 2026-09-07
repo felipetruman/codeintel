@@ -3,17 +3,21 @@ use std::{path::Path, sync::mpsc, thread, time::Duration};
 use anyhow::{Context, Result};
 use notify::{Event, RecursiveMode, Watcher};
 
-use crate::index::CodeIndex;
+use crate::{index::CodeIndex, structural::StructuralIndex};
 
 pub fn serve(root: &Path) -> Result<()> {
-    println!("codeintel: building initial index");
+    println!("codeintel: building initial indexes");
 
-    let index = CodeIndex::rebuild(root)?;
+    let lexical = CodeIndex::rebuild(root)?;
+
+    let structural = StructuralIndex::rebuild(root, &lexical.files)?;
 
     println!(
-        "codeintel: watching {} ({} files indexed)",
+        "codeintel: watching {} ({} files, {} definitions, {} references)",
         root.display(),
-        index.files.len()
+        lexical.files.len(),
+        structural.definitions.len(),
+        structural.references.len(),
     );
 
     let (tx, rx) = mpsc::channel();
@@ -42,12 +46,23 @@ pub fn serve(root: &Path) -> Result<()> {
                 while rx.try_recv().is_ok() {}
 
                 match CodeIndex::rebuild(root) {
-                    Ok(index) => {
-                        println!("codeintel: index refreshed ({} files)", index.files.len());
-                    }
+                    Ok(lexical) => match StructuralIndex::rebuild(root, &lexical.files) {
+                        Ok(structural) => {
+                            println!(
+                                "codeintel: indexes refreshed ({} files, {} definitions, {} references)",
+                                lexical.files.len(),
+                                structural.definitions.len(),
+                                structural.references.len(),
+                            );
+                        }
+
+                        Err(error) => {
+                            eprintln!("codeintel: structural refresh failed: {error:#}");
+                        }
+                    },
 
                     Err(error) => {
-                        eprintln!("codeintel: index refresh failed: {error:#}");
+                        eprintln!("codeintel: lexical refresh failed: {error:#}");
                     }
                 }
             }

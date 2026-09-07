@@ -2,21 +2,32 @@
 
 Local code intelligence and retrieval engine for agentic coding tools.
 
-## Current MVP
+## v0.2
 
-- persistent lexical indexing
-- trigram candidate retrieval
-- literal and regex verification
-- task-oriented context ranking
-- repository watcher
-- MCP integration
-- Claude Code and Codex integration
+CodeIntel combines two independent retrieval layers.
 
-## Build
-
-```bash
-cargo build --release
+```text
+              CodeIntel
+                 |
+        +--------+--------+
+        |                 |
+     Lexical          Structural
+        |                 |
+     trigram          Tree-sitter
+        |                 |
+ regex / text      symbols / refs
+        |                 |
+        +--------+--------+
+                 |
+               Agent
 ```
+
+## Supported structural languages
+
+- Rust
+- Python
+- JavaScript / JSX
+- TypeScript / TSX
 
 ## Index
 
@@ -24,13 +35,20 @@ cargo build --release
 codeintel index .
 ```
 
-## Search
+Creates:
+
+```text
+.codeintel/index.json
+.codeintel/structural.json
+```
+
+## Lexical search
 
 ```bash
 codeintel search 'PaymentService' .
 ```
 
-## Regex
+Regex:
 
 ```bash
 codeintel search 'fn\s+\w+' . --regex
@@ -39,7 +57,28 @@ codeintel search 'fn\s+\w+' . --regex
 ## Context
 
 ```bash
-codeintel context 'implement retry in payment processing' .
+codeintel context 'implement payment retry' .
+```
+
+## Symbols
+
+```bash
+codeintel symbols . --query payment
+```
+
+## Symbol graph
+
+```bash
+codeintel symbol processPayment .
+```
+
+Returns:
+
+```text
+definitions
+callers
+callees
+references
 ```
 
 ## Watch
@@ -48,10 +87,12 @@ codeintel context 'implement retry in payment processing' .
 codeintel serve .
 ```
 
-## MCP
+## MCP tools
 
-```bash
-codeintel mcp
+```text
+code_search
+code_context
+code_symbol
 ```
 
 ## Doctor
@@ -60,16 +101,16 @@ codeintel mcp
 codeintel doctor .
 ```
 
-## Next layer
+## Current resolution policy
 
 ```text
-Tree-sitter
-   |
-symbols
-   |
-references
-   |
-call graph
-   |
-rank fusion
+same-file unique definition
+          |
+          v
+repository-wide same-language unique definition
+          |
+          v
+otherwise ambiguous/unresolved
 ```
+
+This is intentionally conservative and is not compiler-grade semantic analysis.

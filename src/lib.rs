@@ -4,4 +4,5 @@ pub mod doctor;
 pub mod index;
 pub mod mcp;
 pub mod search;
+pub mod structural;
 pub mod workspace;

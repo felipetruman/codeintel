@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 
 use codeintel::{
     context::build_context, daemon, doctor, index::CodeIndex, mcp, search::search_index,
-    workspace::resolve_root,
+    structural::StructuralIndex, workspace::resolve_root,
 };
 
 #[derive(Debug, Parser)]
@@ -21,11 +21,13 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Rebuild lexical and structural indexes.
     Index {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
 
+    /// Search source code.
     Search {
         query: String,
 
@@ -39,6 +41,7 @@ enum Command {
         limit: usize,
     },
 
+    /// Build ranked lexical context for a task.
     Context {
         task: String,
 
@@ -49,15 +52,36 @@ enum Command {
         limit: usize,
     },
 
+    /// Search structural symbol definitions.
+    Symbols {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        #[arg(long, default_value = "")]
+        query: String,
+
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+
+    /// Inspect a symbol, callers, callees and references.
+    Symbol {
+        name: String,
+
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+
+    /// Watch repository and refresh both indexes.
     Serve {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
 
-    Mcp {
-        path: Option<PathBuf>,
-    },
+    /// Start MCP stdio server.
+    Mcp { path: Option<PathBuf> },
 
+    /// Validate CodeIntel environment and indexes.
     Doctor {
         #[arg(default_value = ".")]
         path: PathBuf,
@@ -71,12 +95,22 @@ fn main() -> Result<()> {
         Command::Index { path } => {
             let root = resolve_root(Some(path))?;
 
-            let index = CodeIndex::rebuild(&root)?;
+            let lexical = CodeIndex::rebuild(&root)?;
+
+            let structural = StructuralIndex::rebuild(&root, &lexical.files)?;
 
             println!(
-                "indexed {} files into {}",
-                index.files.len(),
-                root.join(".codeintel/index.json").display()
+                "indexed {} files, {} definitions and {} references",
+                lexical.files.len(),
+                structural.definitions.len(),
+                structural.references.len(),
+            );
+
+            println!("lexical: {}", root.join(".codeintel/index.json").display());
+
+            println!(
+                "structural: {}",
+                root.join(".codeintel/structural.json").display()
             );
         }
 
@@ -103,6 +137,30 @@ fn main() -> Result<()> {
             let bundle = build_context(&index, &task, limit)?;
 
             println!("{}", serde_json::to_string_pretty(&bundle)?);
+        }
+
+        Command::Symbols { path, query, limit } => {
+            let root = resolve_root(Some(path))?;
+
+            let lexical = CodeIndex::ensure(&root)?;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let symbols = structural.find_symbols(&query, limit);
+
+            println!("{}", serde_json::to_string_pretty(&symbols)?);
+        }
+
+        Command::Symbol { name, path } => {
+            let root = resolve_root(Some(path))?;
+
+            let lexical = CodeIndex::ensure(&root)?;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let view = structural.lookup_symbol(&name);
+
+            println!("{}", serde_json::to_string_pretty(&view)?);
         }
 
         Command::Serve { path } => {
