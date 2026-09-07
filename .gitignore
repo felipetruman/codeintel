@@ -1,0 +1,4 @@
+/target
+/.codeintel
+*.log
+.DS_Store
