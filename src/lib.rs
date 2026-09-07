@@ -1,6 +1,7 @@
 pub mod context;
 pub mod daemon;
 pub mod doctor;
+pub mod graph;
 pub mod index;
 pub mod mcp;
 pub mod search;

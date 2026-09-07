@@ -7,8 +7,8 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use crate::{
-    context::build_context, index::CodeIndex, search::search_index, structural::StructuralIndex,
-    workspace::resolve_root,
+    context::build_context, graph::GraphIndex, index::CodeIndex, search::search_index,
+    structural::StructuralIndex, workspace::resolve_root,
 };
 
 pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
@@ -37,7 +37,7 @@ pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
 
         let response = match method {
             "initialize" => {
-                let requested_protocol = request
+                let protocol = request
                     .pointer("/params/protocolVersion")
                     .and_then(Value::as_str)
                     .unwrap_or("2025-06-18");
@@ -45,7 +45,7 @@ pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
                 success(
                     id,
                     json!({
-                        "protocolVersion": requested_protocol,
+                        "protocolVersion": protocol,
                         "capabilities": {
                             "tools": {
                                 "listChanged": false
@@ -56,7 +56,10 @@ pub fn serve(default_path: Option<PathBuf>) -> Result<()> {
                             "version": env!("CARGO_PKG_VERSION")
                         },
                         "instructions":
-                            "Use code_context before broad repository exploration, code_search for lexical search, and code_symbol to inspect definitions, callers, callees and references."
+                            "Use code_context for repository discovery, \
+                             code_search for lexical lookup, \
+                             code_symbol for structural inspection, \
+                             and code_impact before modifying important shared symbols."
                     }),
                 )
             }
@@ -152,19 +155,43 @@ fn tools_list() -> Value {
             {
                 "name": "code_symbol",
                 "description":
-                    "Inspect a structural symbol using Tree-sitter. Returns definitions, resolved callers, resolved callees and related references.",
+                    "Inspect a Tree-sitter structural symbol. Returns definitions, callers, callees and references.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "name": {
-                            "type": "string",
-                            "description":
-                                "Exact symbol name to inspect."
+                            "type": "string"
                         },
                         "path": {
-                            "type": "string",
-                            "description":
-                                "Repository path. Defaults to the current agent workspace."
+                            "type": "string"
+                        }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false
+                }
+            },
+            {
+                "name": "code_impact",
+                "description":
+                    "Analyze graph impact for a symbol. Returns PageRank, direct callers, transitive callers and blast radius.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        },
+                        "path": {
+                            "type": "string"
+                        },
+                        "max_depth": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20,
+                            "default": 4
                         }
                     },
                     "required": ["name"],
@@ -251,6 +278,27 @@ fn call_tool(params: &Value, default_path: Option<PathBuf>) -> Result<Value> {
             let view = structural.lookup_symbol(symbol_name);
 
             serde_json::to_string_pretty(&view)?
+        }
+
+        "code_impact" => {
+            let symbol_name = arguments
+                .get("name")
+                .and_then(Value::as_str)
+                .context("code_impact requires name")?;
+
+            let max_depth = arguments
+                .get("max_depth")
+                .and_then(Value::as_u64)
+                .unwrap_or(4)
+                .clamp(1, 20) as usize;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let graph = GraphIndex::ensure(&root, &structural)?;
+
+            let impact = graph.impact_symbol(symbol_name, max_depth);
+
+            serde_json::to_string_pretty(&impact)?
         }
 
         _ => {

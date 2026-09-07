@@ -1,3 +1,4 @@
+use crate::graph::graph_path;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -45,6 +46,18 @@ pub fn run(root: &Path) -> Result<Vec<DoctorCheck>> {
             "missing".into()
         },
         detail: structural.display().to_string(),
+    });
+
+    let graph = graph_path(root);
+
+    checks.push(DoctorCheck {
+        name: "graph_index".into(),
+        status: if graph.exists() {
+            "ok".into()
+        } else {
+            "missing".into()
+        },
+        detail: graph.display().to_string(),
     });
 
     checks.push(DoctorCheck {

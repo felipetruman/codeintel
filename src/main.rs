@@ -4,8 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use codeintel::{
-    context::build_context, daemon, doctor, index::CodeIndex, mcp, search::search_index,
-    structural::StructuralIndex, workspace::resolve_root,
+    context::build_context, daemon, doctor, graph::GraphIndex, index::CodeIndex, mcp,
+    search::search_index, structural::StructuralIndex, workspace::resolve_root,
 };
 
 #[derive(Debug, Parser)]
@@ -21,13 +21,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Rebuild lexical and structural indexes.
     Index {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
 
-    /// Search source code.
     Search {
         query: String,
 
@@ -41,7 +39,6 @@ enum Command {
         limit: usize,
     },
 
-    /// Build ranked lexical context for a task.
     Context {
         task: String,
 
@@ -52,7 +49,6 @@ enum Command {
         limit: usize,
     },
 
-    /// Search structural symbol definitions.
     Symbols {
         #[arg(default_value = ".")]
         path: PathBuf,
@@ -64,7 +60,6 @@ enum Command {
         limit: usize,
     },
 
-    /// Inspect a symbol, callers, callees and references.
     Symbol {
         name: String,
 
@@ -72,16 +67,33 @@ enum Command {
         path: PathBuf,
     },
 
-    /// Watch repository and refresh both indexes.
+    Graph {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+
+    Impact {
+        name: String,
+
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        #[arg(long, default_value_t = 4)]
+        depth: usize,
+    },
+
     Serve {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
 
-    /// Start MCP stdio server.
-    Mcp { path: Option<PathBuf> },
+    Mcp {
+        path: Option<PathBuf>,
+    },
 
-    /// Validate CodeIntel environment and indexes.
     Doctor {
         #[arg(default_value = ".")]
         path: PathBuf,
@@ -99,11 +111,14 @@ fn main() -> Result<()> {
 
             let structural = StructuralIndex::rebuild(&root, &lexical.files)?;
 
+            let graph = GraphIndex::rebuild(&root, &structural)?;
+
             println!(
-                "indexed {} files, {} definitions and {} references",
+                "indexed {} files, {} definitions, {} references and {} graph nodes",
                 lexical.files.len(),
                 structural.definitions.len(),
                 structural.references.len(),
+                graph.nodes.len(),
             );
 
             println!("lexical: {}", root.join(".codeintel/index.json").display());
@@ -112,6 +127,8 @@ fn main() -> Result<()> {
                 "structural: {}",
                 root.join(".codeintel/structural.json").display()
             );
+
+            println!("graph: {}", root.join(".codeintel/graph.json").display());
         }
 
         Command::Search {
@@ -146,9 +163,10 @@ fn main() -> Result<()> {
 
             let structural = StructuralIndex::ensure(&root, &lexical.files)?;
 
-            let symbols = structural.find_symbols(&query, limit);
-
-            println!("{}", serde_json::to_string_pretty(&symbols)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&structural.find_symbols(&query, limit,))?
+            );
         }
 
         Command::Symbol { name, path } => {
@@ -158,9 +176,40 @@ fn main() -> Result<()> {
 
             let structural = StructuralIndex::ensure(&root, &lexical.files)?;
 
-            let view = structural.lookup_symbol(&name);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&structural.lookup_symbol(&name,))?
+            );
+        }
 
-            println!("{}", serde_json::to_string_pretty(&view)?);
+        Command::Graph { path, limit } => {
+            let root = resolve_root(Some(path))?;
+
+            let lexical = CodeIndex::ensure(&root)?;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let graph = GraphIndex::ensure(&root, &structural)?;
+
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&graph.ranked_symbols(limit))?
+            );
+        }
+
+        Command::Impact { name, path, depth } => {
+            let root = resolve_root(Some(path))?;
+
+            let lexical = CodeIndex::ensure(&root)?;
+
+            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+
+            let graph = GraphIndex::ensure(&root, &structural)?;
+
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&graph.impact_symbol(&name, depth,))?
+            );
         }
 
         Command::Serve { path } => {

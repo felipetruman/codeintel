@@ -132,3 +132,28 @@ Structural resolution also checks whether a symbol kind is compatible
 with the reference before creating an edge.
 # codeintel
 # codeintel
+
+## Graph Intelligence — v0.3
+
+```bash
+codeintel index .
+codeintel graph . --limit 20
+codeintel impact resolve_root . --depth 4
+```
+
+MCP tools:
+
+```text
+code_search
+code_context
+code_symbol
+code_impact
+```
+
+Indexes:
+
+```text
+.codeintel/index.json
+.codeintel/structural.json
+.codeintel/graph.json
+```

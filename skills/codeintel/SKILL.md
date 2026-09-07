@@ -56,3 +56,16 @@ Never represent the current structural graph as compiler-complete.
 Member and method calls may be returned as `external_or_method`.
 Do not infer a local callee from these references until type-aware
 semantic resolution is available.
+
+## Graph impact
+
+Before modifying an important shared symbol, use `code_impact`.
+
+It returns:
+
+- PageRank
+- direct callers
+- transitive callers
+- blast radius
+
+Only resolved structural references become graph edges.

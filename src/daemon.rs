@@ -3,21 +3,23 @@ use std::{path::Path, sync::mpsc, thread, time::Duration};
 use anyhow::{Context, Result};
 use notify::{Event, RecursiveMode, Watcher};
 
-use crate::{index::CodeIndex, structural::StructuralIndex};
+use crate::{graph::GraphIndex, index::CodeIndex, structural::StructuralIndex};
 
 pub fn serve(root: &Path) -> Result<()> {
-    println!("codeintel: building initial indexes");
+    println!("codeintel: building indexes");
 
     let lexical = CodeIndex::rebuild(root)?;
 
     let structural = StructuralIndex::rebuild(root, &lexical.files)?;
 
+    let graph = GraphIndex::rebuild(root, &structural)?;
+
     println!(
-        "codeintel: watching {} ({} files, {} definitions, {} references)",
+        "codeintel: watching {} ({} files, {} definitions, {} graph nodes)",
         root.display(),
         lexical.files.len(),
         structural.definitions.len(),
-        structural.references.len(),
+        graph.nodes.len(),
     );
 
     let (tx, rx) = mpsc::channel();
@@ -47,14 +49,20 @@ pub fn serve(root: &Path) -> Result<()> {
 
                 match CodeIndex::rebuild(root) {
                     Ok(lexical) => match StructuralIndex::rebuild(root, &lexical.files) {
-                        Ok(structural) => {
-                            println!(
-                                "codeintel: indexes refreshed ({} files, {} definitions, {} references)",
-                                lexical.files.len(),
-                                structural.definitions.len(),
-                                structural.references.len(),
-                            );
-                        }
+                        Ok(structural) => match GraphIndex::rebuild(root, &structural) {
+                            Ok(graph) => {
+                                println!(
+                                    "codeintel: indexes refreshed ({} files, {} definitions, {} graph nodes)",
+                                    lexical.files.len(),
+                                    structural.definitions.len(),
+                                    graph.nodes.len(),
+                                );
+                            }
+
+                            Err(error) => {
+                                eprintln!("codeintel: graph refresh failed: {error:#}");
+                            }
+                        },
 
                         Err(error) => {
                             eprintln!("codeintel: structural refresh failed: {error:#}");
