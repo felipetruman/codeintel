@@ -50,3 +50,9 @@ Native Grep, Glob, Read, rg, git and LSP remain valid when:
 - CodeIntel reports an error
 
 Never represent the current structural graph as compiler-complete.
+
+## Structural precision
+
+Member and method calls may be returned as `external_or_method`.
+Do not infer a local callee from these references until type-aware
+semantic resolution is available.

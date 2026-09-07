@@ -42,6 +42,7 @@ pub enum SymbolKind {
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceKind {
     Call,
+    MethodCall,
     Construct,
     Macro,
 }
@@ -51,6 +52,7 @@ pub enum ReferenceKind {
 pub enum ReferenceResolution {
     SameFile,
     GlobalUnique,
+    ExternalOrMethod,
     Ambiguous,
     Unresolved,
 }
@@ -460,7 +462,13 @@ fn reference_for<'tree>(
             "call_expression" => {
                 let function = node.child_by_field_name("function")?;
 
-                rightmost_name_node(function).map(|name| (name, ReferenceKind::Call))
+                let kind = if function.kind() == "identifier" {
+                    ReferenceKind::Call
+                } else {
+                    ReferenceKind::MethodCall
+                };
+
+                rightmost_name_node(function).map(|name| (name, kind))
             }
 
             "macro_invocation" => {
@@ -479,7 +487,13 @@ fn reference_for<'tree>(
 
             let function = node.child_by_field_name("function")?;
 
-            rightmost_name_node(function).map(|name| (name, ReferenceKind::Call))
+            let kind = if function.kind() == "identifier" {
+                ReferenceKind::Call
+            } else {
+                ReferenceKind::MethodCall
+            };
+
+            rightmost_name_node(function).map(|name| (name, kind))
         }
 
         SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::Tsx => {
@@ -487,13 +501,25 @@ fn reference_for<'tree>(
                 "call_expression" => {
                     let function = node.child_by_field_name("function")?;
 
-                    rightmost_name_node(function).map(|name| (name, ReferenceKind::Call))
+                    let kind = if function.kind() == "identifier" {
+                        ReferenceKind::Call
+                    } else {
+                        ReferenceKind::MethodCall
+                    };
+
+                    rightmost_name_node(function).map(|name| (name, kind))
                 }
 
                 "new_expression" => {
                     let constructor = node.child_by_field_name("constructor")?;
 
-                    rightmost_name_node(constructor).map(|name| (name, ReferenceKind::Construct))
+                    let kind = if constructor.kind() == "identifier" {
+                        ReferenceKind::Construct
+                    } else {
+                        ReferenceKind::MethodCall
+                    };
+
+                    rightmost_name_node(constructor).map(|name| (name, kind))
                 }
 
                 _ => None,
@@ -532,25 +558,47 @@ fn node_text(node: Node<'_>, source: &[u8]) -> Option<String> {
     }
 }
 
+type DefinitionKey = (SourceLanguage, String);
+type DefinitionCandidate = (u64, String, SymbolKind);
+
 fn resolve_references(definitions: &[SymbolDefinition], references: &mut [SymbolReference]) {
-    let mut by_name: BTreeMap<(SourceLanguage, String), Vec<(u64, String)>> = BTreeMap::new();
+    let mut by_name: BTreeMap<DefinitionKey, Vec<DefinitionCandidate>> = BTreeMap::new();
 
     for definition in definitions {
         by_name
             .entry((definition.language, definition.name.clone()))
             .or_default()
-            .push((definition.id, definition.path.clone()));
+            .push((definition.id, definition.path.clone(), definition.kind));
     }
 
     for reference in references {
-        let Some(candidates) = by_name.get(&(reference.language, reference.name.clone())) else {
+        reference.target = None;
+
+        if reference.kind == ReferenceKind::MethodCall {
+            reference.resolution = ReferenceResolution::ExternalOrMethod;
+            continue;
+        }
+
+        let Some(raw_candidates) = by_name.get(&(reference.language, reference.name.clone()))
+        else {
             reference.resolution = ReferenceResolution::Unresolved;
             continue;
         };
 
+        let candidates: Vec<(u64, &str)> = raw_candidates
+            .iter()
+            .filter(|(_, _, symbol_kind)| reference_target_compatible(reference.kind, *symbol_kind))
+            .map(|(id, path, _)| (*id, path.as_str()))
+            .collect();
+
+        if candidates.is_empty() {
+            reference.resolution = ReferenceResolution::Unresolved;
+            continue;
+        }
+
         let same_file: Vec<u64> = candidates
             .iter()
-            .filter(|(_, path)| path == &reference.path)
+            .filter(|(_, path)| *path == reference.path.as_str())
             .map(|(id, _)| *id)
             .collect();
 
@@ -575,6 +623,23 @@ fn resolve_references(definitions: &[SymbolDefinition], references: &mut [Symbol
         } else {
             reference.resolution = ReferenceResolution::Ambiguous;
         }
+    }
+}
+
+fn reference_target_compatible(reference_kind: ReferenceKind, symbol_kind: SymbolKind) -> bool {
+    match reference_kind {
+        ReferenceKind::Call => {
+            matches!(symbol_kind, SymbolKind::Function)
+        }
+
+        ReferenceKind::Construct => {
+            matches!(
+                symbol_kind,
+                SymbolKind::Class | SymbolKind::Struct | SymbolKind::Function
+            )
+        }
+
+        ReferenceKind::MethodCall | ReferenceKind::Macro => false,
     }
 }
 

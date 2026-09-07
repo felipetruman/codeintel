@@ -224,3 +224,112 @@ function App() {
 
     assert!(view.callers.iter().any(|symbol| { symbol.name == "App" }));
 }
+
+#[test]
+fn rust_method_call_does_not_resolve_to_unrelated_free_function() {
+    let dir = tempdir().unwrap();
+
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        r#"
+fn success() {}
+
+fn caller() {
+    output.status.success();
+}
+"#,
+    )
+    .unwrap();
+
+    let lexical = CodeIndex::build(dir.path()).unwrap();
+
+    let structural = StructuralIndex::build(dir.path(), &lexical.files).unwrap();
+
+    let reference = structural
+        .references
+        .iter()
+        .find(|reference| reference.name == "success")
+        .unwrap();
+
+    assert!(reference.target.is_none());
+
+    let json = serde_json::to_value(reference).unwrap();
+
+    assert_eq!(json["resolution"], "external_or_method");
+
+    let caller = structural.lookup_symbol("caller");
+
+    assert!(caller.callees.iter().all(|symbol| symbol.name != "success"));
+}
+
+#[test]
+fn typescript_member_call_does_not_resolve_to_unrelated_function() {
+    let dir = tempdir().unwrap();
+
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+
+    fs::write(
+        dir.path().join("src/service.ts"),
+        r#"
+function success() {}
+
+function caller(output: any) {
+    return output.success();
+}
+"#,
+    )
+    .unwrap();
+
+    let lexical = CodeIndex::build(dir.path()).unwrap();
+
+    let structural = StructuralIndex::build(dir.path(), &lexical.files).unwrap();
+
+    let reference = structural
+        .references
+        .iter()
+        .find(|reference| reference.path == "src/service.ts" && reference.name == "success")
+        .unwrap();
+
+    assert!(reference.target.is_none());
+
+    let json = serde_json::to_value(reference).unwrap();
+
+    assert_eq!(json["resolution"], "external_or_method");
+}
+
+#[test]
+fn plain_call_does_not_resolve_to_non_callable_symbol() {
+    let dir = tempdir().unwrap();
+
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        r#"
+mod context {}
+
+fn caller() {
+    context();
+}
+"#,
+    )
+    .unwrap();
+
+    let lexical = CodeIndex::build(dir.path()).unwrap();
+
+    let structural = StructuralIndex::build(dir.path(), &lexical.files).unwrap();
+
+    let reference = structural
+        .references
+        .iter()
+        .find(|reference| reference.name == "context")
+        .unwrap();
+
+    assert!(reference.target.is_none());
+
+    let json = serde_json::to_value(reference).unwrap();
+
+    assert_eq!(json["resolution"], "unresolved");
+}
