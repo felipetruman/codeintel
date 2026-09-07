@@ -114,3 +114,21 @@ otherwise ambiguous/unresolved
 ```
 
 This is intentionally conservative and is not compiler-grade semantic analysis.
+
+## Graph hygiene
+
+CodeIntel distinguishes plain calls from member/method calls.
+
+```text
+foo()
+  -> eligible for conservative local resolution
+
+object.foo()
+  -> external_or_method
+  -> no speculative graph edge
+```
+
+Structural resolution also checks whether a symbol kind is compatible
+with the reference before creating an edge.
+# codeintel
+# codeintel
