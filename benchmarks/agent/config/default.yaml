@@ -1,0 +1,7 @@
+repeat: 1
+seed: 1337
+timeout_seconds: 30
+codeintel_mode: warm
+deterministic_runners:
+  - rg
+  - codeintel
