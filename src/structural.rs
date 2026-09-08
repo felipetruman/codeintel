@@ -10,6 +10,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Language, Node, Parser};
 
+use crate::manifest::ChangeSet;
+
 pub const STRUCTURAL_FILE: &str = "structural.json";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -83,11 +85,27 @@ pub struct SymbolReference {
     pub resolution: ReferenceResolution,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileStructuralData {
+    pub definitions: Vec<SymbolDefinition>,
+    pub references: Vec<SymbolReference>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StructuralRefreshStats {
+    pub reused: usize,
+    pub reparsed: usize,
+    pub removed: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructuralIndex {
     pub root: String,
     pub definitions: Vec<SymbolDefinition>,
     pub references: Vec<SymbolReference>,
+
+    #[serde(default)]
+    pub file_data: BTreeMap<String, FileStructuralData>,
     pub indexed_at_unix: u64,
 }
 
@@ -134,55 +152,102 @@ impl StructuralIndex {
             .canonicalize()
             .with_context(|| format!("cannot canonicalize structural root {}", root.display()))?;
 
-        let mut definitions = Vec::new();
-        let mut references = Vec::new();
+        let mut file_data = BTreeMap::new();
 
         for relative in files {
-            let Some(language) = SourceLanguage::from_path(relative) else {
-                continue;
-            };
-
-            let absolute = root.join(relative);
-
-            let Ok(source) = fs::read(&absolute) else {
-                continue;
-            };
-
-            let mut parser = Parser::new();
-            let grammar = language.tree_sitter_language();
-
-            parser
-                .set_language(&grammar)
-                .with_context(|| format!("cannot initialize parser for {relative}"))?;
-
-            let Some(tree) = parser.parse(&source, None) else {
-                continue;
-            };
-
-            walk_node(
-                tree.root_node(),
-                &source,
-                relative,
-                language,
-                None,
-                &mut definitions,
-                &mut references,
-            );
+            if let Some(data) = parse_structural_file(&root, relative)? {
+                file_data.insert(relative.clone(), data);
+            }
         }
 
-        resolve_references(&definitions, &mut references);
+        Ok(assemble_structural_index(&root, file_data))
+    }
 
-        let indexed_at_unix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+    pub fn refresh_incremental(
+        root: &Path,
+        previous: &Self,
+        files: &[String],
+        changes: &ChangeSet,
+    ) -> Result<(Self, StructuralRefreshStats)> {
+        let root = root
+            .canonicalize()
+            .with_context(|| format!("cannot canonicalize structural root {}", root.display()))?;
 
-        Ok(Self {
-            root: root.to_string_lossy().to_string(),
-            definitions,
-            references,
-            indexed_at_unix,
-        })
+        let current_supported: BTreeSet<String> = files
+            .iter()
+            .filter(|path| SourceLanguage::from_path(path).is_some())
+            .cloned()
+            .collect();
+
+        let previous_root = PathBuf::from(&previous.root).canonicalize().ok();
+
+        let cache_incomplete = changes
+            .unchanged
+            .iter()
+            .filter(|path| SourceLanguage::from_path(path).is_some())
+            .any(|path| !previous.file_data.contains_key(path));
+
+        if previous_root.as_ref() != Some(&root) || cache_incomplete {
+            let rebuilt = Self::build(&root, files)?;
+
+            return Ok((
+                rebuilt,
+                StructuralRefreshStats {
+                    reused: 0,
+                    reparsed: current_supported.len(),
+                    removed: changes
+                        .deleted
+                        .iter()
+                        .filter(|path| SourceLanguage::from_path(path).is_some())
+                        .count(),
+                },
+            ));
+        }
+
+        let mut file_data = previous.file_data.clone();
+
+        let previous_paths: BTreeSet<String> = file_data.keys().cloned().collect();
+
+        file_data.retain(|path, _| current_supported.contains(path));
+
+        let removed = previous_paths.difference(&current_supported).count();
+
+        let changed_paths: BTreeSet<String> = changes
+            .added
+            .iter()
+            .chain(changes.modified.iter())
+            .filter(|path| current_supported.contains(path.as_str()))
+            .cloned()
+            .collect();
+
+        let mut reparsed = 0;
+
+        for path in &changed_paths {
+            file_data.remove(path);
+
+            if let Some(data) = parse_structural_file(&root, path)? {
+                file_data.insert(path.clone(), data);
+            }
+
+            reparsed += 1;
+        }
+
+        let reused = changes
+            .unchanged
+            .iter()
+            .filter(|path| {
+                current_supported.contains(path.as_str()) && file_data.contains_key(path.as_str())
+            })
+            .count();
+
+        Ok((
+            assemble_structural_index(&root, file_data),
+            StructuralRefreshStats {
+                reused,
+                reparsed,
+                removed,
+            },
+        ))
     }
 
     pub fn rebuild(root: &Path, files: &[String]) -> Result<Self> {
@@ -291,6 +356,92 @@ impl StructuralIndex {
             references: related_references,
         }
     }
+}
+
+fn parse_structural_file(root: &Path, relative: &str) -> Result<Option<FileStructuralData>> {
+    let Some(language) = SourceLanguage::from_path(relative) else {
+        return Ok(None);
+    };
+
+    let absolute = root.join(relative);
+
+    let source = match fs::read(&absolute) {
+        Ok(source) => source,
+
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot read structural source {}", absolute.display()));
+        }
+    };
+
+    let mut parser = Parser::new();
+
+    let grammar = language.tree_sitter_language();
+
+    parser
+        .set_language(&grammar)
+        .with_context(|| format!("cannot initialize parser for {relative}"))?;
+
+    let Some(tree) = parser.parse(&source, None) else {
+        return Ok(None);
+    };
+
+    let mut definitions = Vec::new();
+
+    let mut references = Vec::new();
+
+    walk_node(
+        tree.root_node(),
+        &source,
+        relative,
+        language,
+        None,
+        &mut definitions,
+        &mut references,
+    );
+
+    Ok(Some(FileStructuralData {
+        definitions,
+        references,
+    }))
+}
+
+fn assemble_structural_index(
+    root: &Path,
+    file_data: BTreeMap<String, FileStructuralData>,
+) -> StructuralIndex {
+    let mut definitions = Vec::new();
+
+    let mut references = Vec::new();
+
+    for data in file_data.values() {
+        definitions.extend(data.definitions.iter().cloned());
+
+        references.extend(data.references.iter().cloned());
+    }
+
+    resolve_references(&definitions, &mut references);
+
+    StructuralIndex {
+        root: root.to_string_lossy().to_string(),
+
+        definitions,
+        references,
+        file_data,
+
+        indexed_at_unix: current_unix_time(),
+    }
+}
+
+fn current_unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 pub fn structural_path(root: &Path) -> PathBuf {

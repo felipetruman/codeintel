@@ -180,6 +180,7 @@ fn empty_structural_graph_degrades_to_lexical() {
             .to_string(),
         definitions: Vec::new(),
         references: Vec::new(),
+        file_data: Default::default(),
         indexed_at_unix: 0,
     };
 
