@@ -7,21 +7,40 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+
 use ignore::WalkBuilder;
+
 use serde::{Deserialize, Serialize};
 
+use crate::manifest::ChangeSet;
+
 pub const INDEX_DIR: &str = ".codeintel";
+
 pub const INDEX_FILE: &str = "index.json";
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+
 const BINARY_SNIFF_BYTES: usize = 8192;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeIndex {
     pub root: String,
+
     pub files: Vec<String>,
+
     pub postings: BTreeMap<String, Vec<u32>>,
+
+    #[serde(default)]
+    pub file_trigrams: BTreeMap<String, BTreeSet<String>>,
+
     pub indexed_at_unix: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LexicalRefreshStats {
+    pub reused: usize,
+    pub reindexed: usize,
+    pub removed: usize,
 }
 
 impl CodeIndex {
@@ -30,9 +49,6 @@ impl CodeIndex {
             .canonicalize()
             .with_context(|| format!("cannot canonicalize {}", root.display()))?;
 
-        let mut files = Vec::new();
-        let mut postings: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-
         let walker = WalkBuilder::new(&root)
             .hidden(true)
             .parents(true)
@@ -40,6 +56,8 @@ impl CodeIndex {
             .git_global(true)
             .git_exclude(true)
             .build();
+
+        let mut file_trigrams = BTreeMap::new();
 
         for entry in walker {
             let Ok(entry) = entry else {
@@ -60,49 +78,120 @@ impl CodeIndex {
                 continue;
             }
 
-            let Ok(metadata) = entry.metadata() else {
+            let Some((relative, trigrams)) = index_file(&root, path)? else {
                 continue;
             };
 
-            if metadata.len() > MAX_FILE_BYTES {
-                continue;
-            }
+            file_trigrams.insert(relative, trigrams);
+        }
 
-            let Ok(bytes) = fs::read(path) else {
-                continue;
+        Ok(Self::from_file_trigrams(&root, file_trigrams))
+    }
+
+    pub fn refresh_incremental(
+        root: &Path,
+        previous: &Self,
+        changes: &ChangeSet,
+    ) -> Result<(Self, LexicalRefreshStats)> {
+        let root = root
+            .canonicalize()
+            .with_context(|| format!("cannot canonicalize {}", root.display()))?;
+
+        let previous_root = PathBuf::from(&previous.root);
+
+        if previous_root.canonicalize().ok().as_ref() != Some(&root) {
+            let rebuilt = Self::build(&root)?;
+
+            let stats = LexicalRefreshStats {
+                reused: 0,
+                reindexed: rebuilt.files.len(),
+                removed: 0,
             };
 
-            if is_binary(&bytes) {
-                continue;
-            }
+            return Ok((rebuilt, stats));
+        }
 
-            let relative = path
-                .strip_prefix(&root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string();
+        // Legacy v0.4 indexes do not contain the
+        // per-file lexical cache required for safe reuse.
+        if previous.file_trigrams.len() != previous.files.len() {
+            let rebuilt = Self::build(&root)?;
 
-            let file_id = files.len() as u32;
-            files.push(relative);
+            let stats = LexicalRefreshStats {
+                reused: 0,
+                reindexed: rebuilt.files.len(),
+                removed: changes.deleted.len(),
+            };
 
-            let text = String::from_utf8_lossy(&bytes);
+            return Ok((rebuilt, stats));
+        }
 
-            for trigram in unique_trigrams(&text) {
-                postings.entry(trigram).or_default().push(file_id);
+        let mut file_trigrams = previous.file_trigrams.clone();
+
+        let mut stats = LexicalRefreshStats::default();
+
+        for path in &changes.deleted {
+            if file_trigrams.remove(path).is_some() {
+                stats.removed += 1;
             }
         }
 
-        let indexed_at_unix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        for path in &changes.modified {
+            file_trigrams.remove(path);
 
-        Ok(Self {
+            let absolute = root.join(path);
+
+            if let Some((relative, trigrams)) = index_file(&root, &absolute)? {
+                file_trigrams.insert(relative, trigrams);
+
+                stats.reindexed += 1;
+            }
+        }
+
+        for path in &changes.added {
+            let absolute = root.join(path);
+
+            if let Some((relative, trigrams)) = index_file(&root, &absolute)? {
+                file_trigrams.insert(relative, trigrams);
+
+                stats.reindexed += 1;
+            }
+        }
+
+        stats.reused = changes
+            .unchanged
+            .iter()
+            .filter(|path| file_trigrams.contains_key(path.as_str()))
+            .count();
+
+        Ok((Self::from_file_trigrams(&root, file_trigrams), stats))
+    }
+
+    fn from_file_trigrams(root: &Path, file_trigrams: BTreeMap<String, BTreeSet<String>>) -> Self {
+        let files: Vec<String> = file_trigrams.keys().cloned().collect();
+
+        let mut postings: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+
+        for (file_id, path) in files.iter().enumerate() {
+            let Some(trigrams) = file_trigrams.get(path) else {
+                continue;
+            };
+
+            let file_id = file_id as u32;
+
+            for trigram in trigrams {
+                postings.entry(trigram.clone()).or_default().push(file_id);
+            }
+        }
+
+        Self {
             root: root.to_string_lossy().to_string(),
+
             files,
             postings,
-            indexed_at_unix,
-        })
+            file_trigrams,
+
+            indexed_at_unix: current_unix_time(),
+        }
     }
 
     pub fn ensure(root: &Path) -> Result<Self> {
@@ -113,18 +202,23 @@ impl CodeIndex {
         }
 
         let index = Self::build(root)?;
+
         index.save()?;
+
         Ok(index)
     }
 
     pub fn rebuild(root: &Path) -> Result<Self> {
         let index = Self::build(root)?;
+
         index.save()?;
+
         Ok(index)
     }
 
     pub fn save(&self) -> Result<()> {
         let root = PathBuf::from(&self.root);
+
         let path = index_path(&root);
 
         crate::persistence::atomic_write_json(&path, self)
@@ -185,12 +279,70 @@ impl CodeIndex {
 
     pub fn absolute_file_path(&self, file_id: u32) -> Option<PathBuf> {
         let relative = self.files.get(file_id as usize)?;
+
         Some(PathBuf::from(&self.root).join(relative))
     }
 }
 
 pub fn index_path(root: &Path) -> PathBuf {
     root.join(INDEX_DIR).join(INDEX_FILE)
+}
+
+fn index_file(root: &Path, path: &Path) -> Result<Option<(String, BTreeSet<String>)>> {
+    if is_internal_path(path) {
+        return Ok(None);
+    }
+
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot stat {}", path.display()));
+        }
+    };
+
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+
+    if metadata.len() > MAX_FILE_BYTES {
+        return Ok(None);
+    }
+
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot read {}", path.display()));
+        }
+    };
+
+    if is_binary(&bytes) {
+        return Ok(None);
+    }
+
+    let relative = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string();
+
+    let text = String::from_utf8_lossy(&bytes);
+
+    Ok(Some((relative, unique_trigrams(&text))))
+}
+
+fn current_unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn unique_trigrams(text: &str) -> BTreeSet<String> {
