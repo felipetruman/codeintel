@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use codeintel::{
-    context::build_context, daemon, doctor, graph::GraphIndex, index::CodeIndex, mcp,
+    context::build_repository_context, daemon, doctor, graph::GraphIndex, index::CodeIndex, mcp,
     search::search_index, structural::StructuralIndex, workspace::resolve_root,
 };
 
@@ -151,7 +151,7 @@ fn main() -> Result<()> {
 
             let index = CodeIndex::ensure(&root)?;
 
-            let bundle = build_context(&index, &task, limit)?;
+            let bundle = build_repository_context(&root, &index, &task, limit)?;
 
             println!("{}", serde_json::to_string_pretty(&bundle)?);
         }

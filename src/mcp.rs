@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use crate::{
-    context::build_context, graph::GraphIndex, index::CodeIndex, search::search_index,
+    context::build_repository_context, graph::GraphIndex, index::CodeIndex, search::search_index,
     structural::StructuralIndex, workspace::resolve_root,
 };
 
@@ -127,7 +127,7 @@ fn tools_list() -> Value {
             {
                 "name": "code_context",
                 "description":
-                    "Return ranked repository files relevant to a coding task before broad exploration.",
+                    "Return hybrid-ranked repository files using lexical, structural, graph and proximity signals.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -262,7 +262,7 @@ fn call_tool(params: &Value, default_path: Option<PathBuf>) -> Result<Value> {
                 .unwrap_or(10)
                 .clamp(1, 50) as usize;
 
-            let bundle = build_context(&lexical, task, limit)?;
+            let bundle = build_repository_context(&root, &lexical, task, limit)?;
 
             serde_json::to_string_pretty(&bundle)?
         }

@@ -69,3 +69,17 @@ It returns:
 - blast radius
 
 Only resolved structural references become graph edges.
+
+## Hybrid context
+
+Use `code_context` before broad repository exploration.
+
+Its ranking combines:
+
+- lexical relevance
+- structural symbols/references
+- graph importance
+- graph proximity
+- repository path penalties
+
+Inspect the returned rank fields when deciding why a file was selected.

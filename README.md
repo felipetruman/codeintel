@@ -157,3 +157,28 @@ Indexes:
 .codeintel/structural.json
 .codeintel/graph.json
 ```
+
+## Hybrid context ranking
+
+`code_context` combines:
+
+~~~text
+lexical
++ structural
++ PageRank
++ graph proximity
++ path penalties
+        ↓
+weighted RRF
+~~~
+
+Example:
+
+~~~bash
+codeintel context \
+  "change graph impact ranking" \
+  . \
+  --limit 10
+~~~
+
+The output includes the ranking contribution of every channel.
