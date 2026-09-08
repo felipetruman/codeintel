@@ -3,6 +3,7 @@ pub mod daemon;
 pub mod doctor;
 pub mod graph;
 pub mod index;
+pub mod manifest;
 pub mod mcp;
 pub mod search;
 pub mod structural;
