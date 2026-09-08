@@ -7,7 +7,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+
 use ignore::WalkBuilder;
+
 use serde::{Deserialize, Serialize};
 
 pub const MANIFEST_FILE: &str = "manifest.json";
@@ -77,6 +79,18 @@ impl IndexManifest {
 }
 
 pub fn scan_manifest(root: &Path) -> Result<IndexManifest> {
+    scan_manifest_internal(root, None)
+}
+
+pub fn scan_manifest_incremental(root: &Path, previous: &IndexManifest) -> Result<IndexManifest> {
+    if !previous.is_compatible(root) {
+        return scan_manifest(root);
+    }
+
+    scan_manifest_internal(root, Some(previous))
+}
+
+fn scan_manifest_internal(root: &Path, previous: Option<&IndexManifest>) -> Result<IndexManifest> {
     let root = root
         .canonicalize()
         .with_context(|| format!("cannot canonicalize {}", root.display()))?;
@@ -118,6 +132,24 @@ pub fn scan_manifest(root: &Path) -> Result<IndexManifest> {
             continue;
         }
 
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
+
+        let modified_ns = modified_ns(&metadata);
+
+        if let Some(previous) = previous
+            && let Some(old) = previous.files.get(&relative)
+            && old.size == metadata.len()
+            && old.modified_ns == modified_ns
+        {
+            files.insert(relative, old.clone());
+
+            continue;
+        }
+
         let Ok(bytes) = fs::read(path) else {
             continue;
         };
@@ -125,20 +157,6 @@ pub fn scan_manifest(root: &Path) -> Result<IndexManifest> {
         if is_binary(&bytes) {
             continue;
         }
-
-        let relative = path
-            .strip_prefix(&root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-
-        let modified_ns = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_nanos())
-            .and_then(|value| u64::try_from(value).ok())
-            .unwrap_or_default();
 
         files.insert(
             relative,
@@ -191,6 +209,16 @@ pub fn compare_manifests(old: &IndexManifest, new: &IndexManifest) -> ChangeSet 
 
 pub fn manifest_path(root: &Path) -> PathBuf {
     root.join(".codeintel").join(MANIFEST_FILE)
+}
+
+fn modified_ns(metadata: &fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+        .and_then(|value| u64::try_from(value).ok())
+        .unwrap_or_default()
 }
 
 fn fnv1a64(bytes: &[u8]) -> u64 {

@@ -1,6 +1,7 @@
 pub mod context;
 pub mod daemon;
 pub mod doctor;
+pub mod freshness;
 pub mod graph;
 pub mod index;
 pub mod manifest;
