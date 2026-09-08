@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::{BufReader, BufWriter},
+    io::BufReader,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -49,19 +49,9 @@ impl ChangeSet {
 
 impl IndexManifest {
     pub fn save(&self, root: &Path) -> Result<()> {
-        let dir = root.join(".codeintel");
-
-        fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-
         let path = manifest_path(root);
 
-        let file =
-            File::create(&path).with_context(|| format!("cannot create {}", path.display()))?;
-
-        serde_json::to_writer(BufWriter::new(file), self)
-            .with_context(|| format!("cannot serialize {}", path.display()))?;
-
-        Ok(())
+        crate::persistence::atomic_write_json(&path, self)
     }
 
     pub fn load(root: &Path) -> Result<Self> {

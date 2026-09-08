@@ -1,8 +1,8 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
-    fs::{self, File},
-    io::{BufReader, BufWriter},
+    fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
@@ -117,17 +117,9 @@ impl GraphIndex {
     }
 
     pub fn save(&self, root: &Path) -> Result<()> {
-        let dir = root.join(".codeintel");
+        let path = graph_path(root);
 
-        fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-
-        let path = dir.join(GRAPH_FILE);
-
-        let file =
-            File::create(&path).with_context(|| format!("cannot create {}", path.display()))?;
-
-        serde_json::to_writer(BufWriter::new(file), self)
-            .with_context(|| format!("cannot serialize {}", path.display()))
+        crate::persistence::atomic_write_json(&path, self)
     }
 
     pub fn load(root: &Path) -> Result<Self> {

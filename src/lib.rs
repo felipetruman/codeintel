@@ -5,6 +5,7 @@ pub mod graph;
 pub mod index;
 pub mod manifest;
 pub mod mcp;
+pub mod persistence;
 pub mod search;
 pub mod structural;
 pub mod workspace;

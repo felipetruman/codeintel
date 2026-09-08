@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
-    io::{BufReader, BufWriter},
+    io::BufReader,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -203,19 +203,9 @@ impl StructuralIndex {
 
     pub fn save(&self) -> Result<()> {
         let root = PathBuf::from(&self.root);
-        let dir = root.join(".codeintel");
+        let path = structural_path(&root);
 
-        fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-
-        let path = dir.join(STRUCTURAL_FILE);
-
-        let file =
-            File::create(&path).with_context(|| format!("cannot create {}", path.display()))?;
-
-        serde_json::to_writer(BufWriter::new(file), self)
-            .with_context(|| format!("cannot serialize {}", path.display()))?;
-
-        Ok(())
+        crate::persistence::atomic_write_json(&path, self)
     }
 
     pub fn load(root: &Path) -> Result<Self> {
