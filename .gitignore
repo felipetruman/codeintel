@@ -11,3 +11,7 @@
 /benchmarks/**/__pycache__/
 /benchmarks/**/.pytest_cache/
 /benchmarks/**/*.py[cod]
+
+# Agent benchmark generated results
+/benchmarks/agent/results/*
+!/benchmarks/agent/results/.gitkeep
