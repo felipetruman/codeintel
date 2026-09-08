@@ -2,3 +2,5 @@
 /.codeintel
 *.log
 .DS_Store
+
+/.worktrees/
