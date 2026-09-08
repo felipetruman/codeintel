@@ -1,0 +1,11 @@
+id: rust-locate-process-payment
+type: locate-symbol
+query: process_payment
+prompt: Locate process_payment and the files that reference it.
+corpus: synthetic/rust-cross-file
+expected:
+  files:
+    - src/payment.rs
+    - src/checkout.rs
+  symbols:
+    - process_payment

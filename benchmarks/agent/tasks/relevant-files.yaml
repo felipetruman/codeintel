@@ -1,0 +1,14 @@
+id: typescript-payment-relevant-files
+type: relevant-files
+query: processPayment
+prompt: Identify the files relevant to changing processPayment in the checkout flow.
+corpus: synthetic/typescript-service
+expected:
+  files:
+    - src/payment.ts
+    - src/checkout.ts
+    - src/route.ts
+  symbols:
+    - processPayment
+    - checkout
+    - routeCheckout
