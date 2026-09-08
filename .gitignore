@@ -4,3 +4,10 @@
 .DS_Store
 
 /.worktrees/
+
+# Python benchmark harness
+!/benchmarks/agent/
+!/benchmarks/agent/**
+/benchmarks/**/__pycache__/
+/benchmarks/**/.pytest_cache/
+/benchmarks/**/*.py[cod]
