@@ -4,8 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use codeintel::{
-    context::build_repository_context, daemon, doctor, graph::GraphIndex, index::CodeIndex, mcp,
-    search::search_index, structural::StructuralIndex, workspace::resolve_root,
+    context::build_hybrid_context, daemon, doctor, freshness::ensure_fresh_indexes, mcp,
+    search::search_index, workspace::resolve_root,
 };
 
 #[derive(Debug, Parser)]
@@ -107,18 +107,29 @@ fn main() -> Result<()> {
         Command::Index { path } => {
             let root = resolve_root(Some(path))?;
 
-            let lexical = CodeIndex::rebuild(&root)?;
-
-            let structural = StructuralIndex::rebuild(&root, &lexical.files)?;
-
-            let graph = GraphIndex::rebuild(&root, &structural)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
             println!(
                 "indexed {} files, {} definitions, {} references and {} graph nodes",
-                lexical.files.len(),
-                structural.definitions.len(),
-                structural.references.len(),
-                graph.nodes.len(),
+                fresh.lexical.files.len(),
+                fresh.structural.definitions.len(),
+                fresh.structural.references.len(),
+                fresh.graph.nodes.len(),
+            );
+
+            println!(
+                "fresh: scanned={} reused={} added={} modified={} deleted={} reparsed={}",
+                fresh.stats.scanned,
+                fresh.stats.reused,
+                fresh.stats.added,
+                fresh.stats.modified,
+                fresh.stats.deleted,
+                fresh.stats.reparsed,
+            );
+
+            println!(
+                "manifest: {}",
+                root.join(".codeintel/manifest.json").display()
             );
 
             println!("lexical: {}", root.join(".codeintel/index.json").display());
@@ -139,9 +150,9 @@ fn main() -> Result<()> {
         } => {
             let root = resolve_root(Some(path))?;
 
-            let index = CodeIndex::ensure(&root)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
-            let hits = search_index(&index, &query, regex, limit)?;
+            let hits = search_index(&fresh.lexical, &query, regex, limit)?;
 
             println!("{}", serde_json::to_string_pretty(&hits)?);
         }
@@ -149,9 +160,15 @@ fn main() -> Result<()> {
         Command::Context { task, path, limit } => {
             let root = resolve_root(Some(path))?;
 
-            let index = CodeIndex::ensure(&root)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
-            let bundle = build_repository_context(&root, &index, &task, limit)?;
+            let bundle = build_hybrid_context(
+                &fresh.lexical,
+                &fresh.structural,
+                &fresh.graph,
+                &task,
+                limit,
+            )?;
 
             println!("{}", serde_json::to_string_pretty(&bundle)?);
         }
@@ -159,56 +176,44 @@ fn main() -> Result<()> {
         Command::Symbols { path, query, limit } => {
             let root = resolve_root(Some(path))?;
 
-            let lexical = CodeIndex::ensure(&root)?;
-
-            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
             println!(
                 "{}",
-                serde_json::to_string_pretty(&structural.find_symbols(&query, limit,))?
+                serde_json::to_string_pretty(&fresh.structural.find_symbols(&query, limit,))?
             );
         }
 
         Command::Symbol { name, path } => {
             let root = resolve_root(Some(path))?;
 
-            let lexical = CodeIndex::ensure(&root)?;
-
-            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
             println!(
                 "{}",
-                serde_json::to_string_pretty(&structural.lookup_symbol(&name,))?
+                serde_json::to_string_pretty(&fresh.structural.lookup_symbol(&name,))?
             );
         }
 
         Command::Graph { path, limit } => {
             let root = resolve_root(Some(path))?;
 
-            let lexical = CodeIndex::ensure(&root)?;
-
-            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
-
-            let graph = GraphIndex::ensure(&root, &structural)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
             println!(
                 "{}",
-                serde_json::to_string_pretty(&graph.ranked_symbols(limit))?
+                serde_json::to_string_pretty(&fresh.graph.ranked_symbols(limit,))?
             );
         }
 
         Command::Impact { name, path, depth } => {
             let root = resolve_root(Some(path))?;
 
-            let lexical = CodeIndex::ensure(&root)?;
-
-            let structural = StructuralIndex::ensure(&root, &lexical.files)?;
-
-            let graph = GraphIndex::ensure(&root, &structural)?;
+            let fresh = ensure_fresh_indexes(&root)?;
 
             println!(
                 "{}",
-                serde_json::to_string_pretty(&graph.impact_symbol(&name, depth,))?
+                serde_json::to_string_pretty(&fresh.graph.impact_symbol(&name, depth,))?
             );
         }
 
@@ -225,7 +230,7 @@ fn main() -> Result<()> {
         Command::Doctor { path } => {
             let root = resolve_root(Some(path))?;
 
-            println!("{}", serde_json::to_string_pretty(&doctor::run(&root)?)?);
+            println!("{}", serde_json::to_string_pretty(&doctor::run(&root,)?)?);
         }
     }
 
