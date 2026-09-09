@@ -2,7 +2,7 @@
 
 **Find the code that matters before your agent starts editing.**
 
-[![Version: 0.5.0](https://img.shields.io/badge/version-0.5.0-blue)](Cargo.toml)
+[![Version: 0.6.0](https://img.shields.io/badge/version-0.6.0-blue)](Cargo.toml)
 [![Rust edition: 2024](https://img.shields.io/badge/Rust-edition_2024-orange?logo=rust)](Cargo.toml)
 [![Local Rust tests: 59 passed](https://img.shields.io/badge/local_Rust_tests-59_passed-brightgreen)](docs/verification/2026-09-09-v0.5.0.md)
 [![Core API keys: none](https://img.shields.io/badge/core_API_keys-none-teal)](#what-you-gain)
@@ -16,6 +16,22 @@ The test badge is a **local verification snapshot from September 9, 2026**,
 not a live CI status or a code coverage percentage.
 [Read the evidence and reproduction steps](docs/verification/2026-09-09-v0.5.0.md).
 Badges are rendered by [Shields.io](https://shields.io/).
+
+## New in v0.6.0
+
+The [agent benchmark matrix](benchmarks/agent/README.md) adds reproducible
+rg/CodeIntel comparisons and opt-in Claude/Codex A/B runners. It includes
+isolated repository snapshots, retrieval and graph scoring, nullable telemetry,
+and machine-readable reports. Real-agent runs require explicit permission and
+Linux Bubblewrap containment; the default verification uses no model calls.
+
+This version adds benchmark tooling without changing the Rust retrieval runtime
+or its dependencies. See the [changelog](CHANGELOG.md) for the release scope.
+The v0.5.0 test evidence below remains a dated historical record.
+
+The [v0.6.0 interface verification](docs/verification/2026-09-09-v0.6.0.md)
+exercises all **10 CLI commands and 4 MCP tools** through the release binary.
+Its **17 integration tests** run in CI without model calls.
 
 ## What you gain
 
