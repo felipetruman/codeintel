@@ -1,13 +1,101 @@
 # CodeIntel
 
-Local code intelligence and retrieval engine for agentic coding tools.
+**Find the code that matters before your agent starts editing.**
 
-CodeIntel combines fast lexical search, Tree-sitter structural analysis,
-a repository graph, PageRank, blast-radius analysis and hybrid context
-ranking behind CLI and MCP interfaces.
+[![Version: 0.5.0](https://img.shields.io/badge/version-0.5.0-blue)](Cargo.toml)
+[![Rust edition: 2024](https://img.shields.io/badge/Rust-edition_2024-orange?logo=rust)](Cargo.toml)
+[![Local Rust tests: 59 passed](https://img.shields.io/badge/local_Rust_tests-59_passed-brightgreen)](docs/verification/2026-09-09-v0.5.0.md)
+[![Core API keys: none](https://img.shields.io/badge/core_API_keys-none-teal)](#what-you-gain)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue)](LICENSE)
 
-As of **v0.5**, persistent indexes stay fresh automatically through an
-incremental freshness pipeline.
+CodeIntel is a local code intelligence engine for developers and coding agents.
+It combines literal and regex search, Tree-sitter analysis, a repository graph,
+and ranked context behind a Rust CLI and four MCP tools.
+
+The test badge is a **local verification snapshot from September 9, 2026**,
+not a live CI status or a code coverage percentage.
+[Read the evidence and reproduction steps](docs/verification/2026-09-09-v0.5.0.md).
+Badges are rendered by [Shields.io](https://shields.io/).
+
+## What you gain
+
+| Your task | What CodeIntel provides | Practical benefit |
+| --- | --- | --- |
+| Find an implementation | Verified literal or regex matches with file locations | Start from matching code instead of opening files one by one. |
+| Understand an unfamiliar repository | Files ranked by task relevance, structure, and graph signals | Give your agent a focused starting set of files to inspect. |
+| Plan a change | Definitions, callers, callees, and transitive impact | Inspect known dependencies before editing shared code. |
+| Keep working after edits | Automatic freshness checks and per-file lexical/parse reuse | Query again without manually rebuilding the index each time. |
+| Use intelligence locally | CLI and MCP, without embeddings, API keys, or an inference service | Keep indexing and retrieval on your machine without a model-service dependency. |
+
+CodeIntel returns evidence for an agent to inspect; it does not replace tests,
+code review, or compiler checks. Smaller, better-targeted context can help reduce
+unnecessary reading, but **no token savings or agent speedup percentage is claimed
+here**. Those require a controlled agent benchmark.
+
+## How it works
+
+1. **Scan:** select eligible files and compare their metadata with the persisted
+   manifest to detect additions, edits, and deletions.
+2. **Retrieve:** use a trigram index to narrow lexical candidates, then verify
+   matches against source text.
+3. **Analyze:** parse supported languages with Tree-sitter and conservatively
+   resolve definitions and references into a graph.
+4. **Rank:** combine lexical and structural relevance, PageRank, graph proximity,
+   and path penalties using weighted reciprocal rank fusion.
+5. **Serve:** return results through the CLI or MCP, refreshing indexes as needed.
+
+~~~mermaid
+flowchart LR
+    Source[Repository files] --> Fresh[Freshness scan]
+    Fresh --> Lexical[Trigram index]
+    Fresh --> Structural[Tree-sitter index]
+    Structural --> Graph[Reference graph and PageRank]
+    Lexical --> Context[Hybrid context ranking]
+    Structural --> Context
+    Graph --> Context
+    Context --> Interfaces[CLI and MCP]
+~~~
+
+Lexical and structural indexes remain independent. The current version reuses
+unchanged per-file work, while reference resolution, graph construction, and
+PageRank are global when a refresh requires rebuilding them.
+
+## Verified behavior
+
+A fresh **v0.5.0** build was tested against a three-file Python fixture with the
+call chain `submit_order → checkout → process_payment`.
+
+| Check | Observed result |
+| --- | --- |
+| Search for `process_payment` | Returned `checkout.py` and `payment.py`, exactly the expected files. |
+| Inspect `process_payment` | Returned its definition. |
+| Analyze impact | Direct caller: `checkout`; transitive blast radius: **2**. |
+| Edit only `payment.py` | **3 scanned, 2 reused, 1 modified, 1 reparsed**. |
+| Query unchanged state again | **3 reused, 0 modified, 0 reparsed**. |
+
+These are functional checks on a small synthetic fixture, not production-scale
+performance measurements. [Run the same proof](docs/verification/2026-09-09-v0.5.0.md#reproduce-the-functional-proof).
+
+### Test evidence
+
+The fresh local Rust suite completed with **59 passed, 0 failed, 0 ignored**.
+Formatting, Clippy with warnings denied, and the locked release build also passed.
+
+| Test suite | Passed | What it checks |
+| --- | ---: | --- |
+| [Core retrieval](tests/core.rs) | 2 | Lexical search and context behavior. |
+| [Structural analysis](tests/structural.rs) | 9 | Language parsing and conservative resolution. |
+| [Graph](tests/graph.rs) | 5 | Graph relationships, ranking, and impact. |
+| [Hybrid context](tests/hybrid_context.rs) | 8 | Combined ranking behavior. |
+| [Incremental indexing](tests/incremental.rs) | 9 | Per-file change detection and reuse. |
+| [Freshness](tests/freshness.rs) | 12 | Index freshness, rebuilds, and recovery. |
+| [CLI/MCP freshness](tests/interface_freshness.rs) | 4 | Queries refresh indexes after source edits. |
+| [Persistence](tests/persistence.rs) | 3 | Atomic writes and stored index behavior. |
+| [Daemon](tests/daemon.rs) | 2 | Watch-triggered index refresh. |
+| [Doctor](tests/doctor.rs) | 5 | Read-only diagnostics. |
+
+See the [verification record](docs/verification/2026-09-09-v0.5.0.md) for the
+revision, commands, environment, and limits of this evidence.
 
 ## Install
 
@@ -82,7 +170,7 @@ Keep native tools such as `rg` available as a fallback.
                      CLI / MCP / Agent
 ~~~
 
-## v0.5 — Fresh Incremental Indexing
+## Fresh incremental indexing
 
 CodeIntel v0.5 adds an authoritative freshness pipeline for all
 persistent indexes.
