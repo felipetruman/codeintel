@@ -9,6 +9,57 @@ ranking behind CLI and MCP interfaces.
 As of **v0.5**, persistent indexes stay fresh automatically through an
 incremental freshness pipeline.
 
+## Install
+
+Build from source with a Rust toolchain that supports edition 2024, Cargo,
+and a C compiler for the Tree-sitter parsers. Git is used to clone the project
+and detect repository roots.
+
+~~~bash
+git clone https://github.com/felipetruman/codeintel.git
+cd codeintel
+cargo install --path . --locked
+codeintel --version
+~~~
+
+Ensure Cargo's binary directory (normally `$HOME/.cargo/bin`) is on `PATH`.
+To build without installing, run `cargo build --release --locked` and use
+`./target/release/codeintel` instead of `codeintel`.
+
+## Quick start
+
+From the repository you want to inspect:
+
+~~~bash
+codeintel context "understand repository architecture" . --limit 5
+codeintel search 'resolve_root' . --limit 10
+codeintel symbol resolve_root .
+codeintel impact resolve_root . --depth 2
+codeintel doctor .
+~~~
+
+The symbol examples use this repository's `resolve_root` function. Replace
+it with a symbol from your project when inspecting another repository.
+
+Queries create or refresh `.codeintel/` automatically; a separate indexing
+step or running daemon is optional. The repository must be writable for
+index persistence. Add `.codeintel/` to your project's `.gitignore` to keep
+generated indexes out of commits.
+
+Search, context, symbols, symbol, graph, and impact commands print JSON.
+Use `codeintel --help` or `codeintel <command> --help` to inspect arguments.
+Keep native tools such as `rg` available as a fallback.
+
+## Navigation
+
+- [Architecture](#architecture) and [persistent state](#persistent-state)
+- [Lexical search](#lexical-search) and [hybrid context](#hybrid-context)
+- [Structural intelligence](#structural-intelligence) and
+  [graph intelligence](#graph-intelligence)
+- [MCP integration](#mcp) and [diagnostics](#doctor)
+- [Repository path handling](#repository-path-handling) and
+  [development](#development)
+
 ## Architecture
 
 ~~~text
@@ -329,6 +380,21 @@ Start the MCP server:
 codeintel mcp .
 ~~~
 
+The server communicates over stdin/stdout using newline-delimited JSON-RPC.
+Configure your MCP client to launch the installed binary with these values:
+
+~~~json
+{
+  "command": "/absolute/path/to/codeintel",
+  "args": ["mcp", "/absolute/path/to/your/repository"]
+}
+~~~
+
+Replace both paths and place this server entry in your client's MCP
+configuration format. An explicit repository path avoids depending on the
+client's working directory. Tool calls can override the server's default
+repository with their `path` argument.
+
 Available tools:
 
 ~~~text
@@ -427,6 +493,10 @@ classify unchanged without rereading source contents
 When metadata changes, CodeIntel reads and hashes the file again before
 classifying it.
 
+Edits that preserve both file size and modification time can evade this
+metadata check. Freshness is not a byte-for-byte integrity audit on every
+query.
+
 ## Current incremental boundaries
 
 Incremental in v0.5:
@@ -463,14 +533,49 @@ trusted, including:
 
 ## Repository path handling
 
-CodeIntel resolves the repository root from:
+Most CLI commands default their path argument to `.`. Pass an explicit path
+to inspect another repository; these commands do not use environment
+variables in place of their default `.`.
 
-1. explicit CLI/MCP path;
-2. `CODEINTEL_ROOT`;
-3. `CLAUDE_PROJECT_DIR`;
-4. current directory.
+For MCP, CodeIntel selects the path in this order:
 
-When possible, Git is used to resolve the repository top-level.
+1. Tool call `path`, then the path passed to `codeintel mcp`.
+2. `CODEINTEL_ROOT`.
+3. `CLAUDE_PROJECT_DIR`.
+4. Current directory.
+
+When possible, Git resolves the selected path to the repository top-level.
+A path inside a Git repository therefore selects the whole repository, not
+only that subdirectory. Outside Git, CodeIntel uses the canonical directory.
+
+## Indexed files and limitations
+
+The scanner respects Git ignore rules and skips hidden entries, internal
+index files, files larger than 4 MiB, and files detected as binary. Symbol
+and graph analysis is limited to the supported Tree-sitter languages;
+lexical search can cover other text files admitted by the scanner.
+
+Graph impact represents conservatively resolved references. Unresolved
+calls, dynamic dispatch, and type-dependent relationships can be absent,
+so blast radius is not a complete semantic dependency analysis.
+
+## Development
+
+Run the repository's Rust checks from the project root:
+
+~~~bash
+cargo fmt --check
+cargo test --locked
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo build --release --locked
+git diff --check
+~~~
+
+See [AGENTS.md](AGENTS.md) for architecture and engineering conventions.
+
+## License
+
+CodeIntel is licensed under [Apache-2.0](LICENSE).
 
 ## Design principles
 
