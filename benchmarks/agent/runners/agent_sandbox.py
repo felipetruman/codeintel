@@ -1,3 +1,6 @@
+from benchmarks.agent.process import ProcessOptions
+from dataclasses import dataclass
+
 """Linux filesystem isolation shared by both real-agent A/B arms."""
 
 from contextlib import contextmanager
@@ -7,6 +10,13 @@ import shutil
 import tempfile
 
 from benchmarks.agent.process import run_process
+
+
+@dataclass(frozen=True)
+class AgentProcessOptions:
+    codeintel_binary: str | None = None
+    agent: str | None = None
+
 
 SYSTEM_PATHS = (
     "/usr",
@@ -139,8 +149,15 @@ def agent_sandbox(
         yield prefix + ["--", str(executable), *argv[1:]], _environment(agent)
 
 
-def run_agent_process(argv, cwd, timeout_seconds, codeintel_binary=None, agent=None):
+def run_agent_process(
+    argv, cwd, timeout_seconds, options: AgentProcessOptions | None = None
+):
+    options = options or AgentProcessOptions()
+    codeintel_binary, agent = options.codeintel_binary, options.agent
     with agent_sandbox(argv, cwd, codeintel_binary, agent) as (isolated_argv, env):
         return run_process(
-            isolated_argv, cwd, timeout_seconds, env=env, inherit_env=False
+            isolated_argv,
+            cwd,
+            timeout_seconds,
+            options=ProcessOptions(env=env, inherit_env=False),
         )

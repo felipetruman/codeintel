@@ -1,3 +1,4 @@
+from benchmarks.agent.process import ProcessOptions
 import pytest
 
 from benchmarks.agent.isolation import isolated_repository, repository_digest
@@ -48,12 +49,11 @@ def test_digest_tracks_directory_links(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "module,runner", [(claude, claude.ClaudeRunner), (codex, codex.CodexRunner)]
+    "provider", [(claude, claude.ClaudeRunner), (codex, codex.CodexRunner)]
 )
 @pytest.mark.parametrize("stdout", ["", "garbage", "{}", "[]"])
-def test_agent_requires_valid_completed_output(
-    tmp_path, monkeypatch, module, runner, stdout
-):
+def test_agent_requires_valid_completed_output(tmp_path, monkeypatch, provider, stdout):
+    module, runner = provider
     process = ProcessResult([], stdout, "", 0, 1.0, False)
     monkeypatch.setattr(module, "run_process", lambda *a, **k: process)
     task = BenchmarkTask(
@@ -92,7 +92,7 @@ def test_process_bounds_output(tmp_path):
         [sys.executable, "-c", "import sys; sys.stdout.write('x'*100000)"],
         tmp_path,
         2,
-        max_output_bytes=1024,
+        options=ProcessOptions(max_output_bytes=1024),
     )
     assert result.output_limited
     assert result.exit_code is None
@@ -150,3 +150,40 @@ def test_rg_query_is_literal_and_not_an_option(tmp_path):
     result = RgRunner().run(task, tmp_path)
     assert result.success
     assert result.files == ["file.txt"]
+
+
+def test_failed_pair_has_no_efficiency_claim():
+    from benchmarks.agent.agent_metrics import compare_pair
+    from benchmarks.agent.models import BenchmarkResult
+
+    task = BenchmarkTask("test", "relevant-files", "q", "p", "synthetic", GroundTruth())
+    baseline = BenchmarkResult("claude", "test", True, 100, tokens=TokenUsage(100, 10))
+    failed = BenchmarkResult(
+        "claude-codeintel", "test", False, 1, tokens=TokenUsage(1, 1)
+    )
+    comparison = compare_pair(baseline, failed, task)
+    assert comparison.duration_reduction_pct is None
+    assert comparison.total_token_reduction_pct is None
+
+
+@pytest.mark.parametrize("payload", ["{}", '{"files": null}', '{"files": [7]}'])
+def test_codeintel_rejects_invalid_context_payload(tmp_path, monkeypatch, payload):
+    from benchmarks.agent.runners import codeintel
+
+    process = ProcessResult([], payload, "", 0, 1.0, False)
+    monkeypatch.setattr(codeintel, "run_process", lambda *a, **k: process)
+    result = codeintel.CodeIntelRunner(mode="cold").run_operation(
+        "context", "q", tmp_path, "test"
+    )
+    assert not result.success
+
+
+def test_invalid_generic_object_is_not_success(tmp_path):
+    import sys
+    from benchmarks.agent.runners.agent_base import GenericAgentRunner
+
+    task = BenchmarkTask("test", "relevant-files", "q", "p", "synthetic", GroundTruth())
+    command = AgentCommand(
+        "fake", (sys.executable, "-c", "print('{}')", "{prompt}"), 1, False
+    )
+    assert not GenericAgentRunner(command).run(task, tmp_path).success

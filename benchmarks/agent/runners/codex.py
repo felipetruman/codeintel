@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from benchmarks.agent.runners.agent_sandbox import AgentProcessOptions
+
 from dataclasses import dataclass, replace
 import json
 import os
@@ -23,6 +25,14 @@ from benchmarks.agent.runners.agent_protocol import (
     mcp_executable,
     benchmark_prompt,
 )
+
+
+@dataclass(frozen=True)
+class CodexInvocation:
+    repo: Path
+    prompt: str
+    codeintel_enabled: bool
+    schema_path: Path
 
 
 @dataclass(frozen=True)
@@ -74,13 +84,12 @@ def _codeintel_overrides(
     ]
 
 
-def build_codex_command(
-    config: CodexConfig,
-    repo: Path,
-    prompt: str,
-    codeintel_enabled: bool,
-    schema_path: Path,
-) -> list[str]:
+def build_codex_command(config: CodexConfig, invocation: CodexInvocation) -> list[str]:
+    repo, prompt = invocation.repo, invocation.prompt
+    codeintel_enabled, schema_path = (
+        invocation.codeintel_enabled,
+        invocation.schema_path,
+    )
     argv = [
         config.executable,
         "exec",
@@ -221,18 +230,22 @@ def _execute_codex(config: CodexConfig, repo: Path, prompt: str, enabled: bool):
 
         argv = build_codex_command(
             config,
-            repo,
-            prompt,
-            enabled,
-            schema_path,
+            CodexInvocation(
+                codeintel_enabled=enabled,
+                schema_path=schema_path,
+                repo=repo,
+                prompt=prompt,
+            ),
         )
 
         process = run_process(
             argv,
             cwd=repo,
-            agent="codex",
-            timeout_seconds=(config.timeout_seconds),
-            codeintel_binary=(config.codeintel_binary if enabled else None),
+            timeout_seconds=config.timeout_seconds,
+            options=AgentProcessOptions(
+                agent="codex",
+                codeintel_binary=config.codeintel_binary if enabled else None,
+            ),
         )
 
     finally:
@@ -295,6 +308,7 @@ class CodexRunner:
                 # JSONL does not expose a
                 # trustworthy canonical list
                 # of every file read.
+                "tool_calls_observed": bool(telemetry.tool_calls),
                 "files_read": None,
                 "usage": (telemetry.raw_usage),
                 "timed_out": (process.timed_out),

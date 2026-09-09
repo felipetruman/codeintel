@@ -56,39 +56,25 @@ class BenchmarkTask:
     expected: GroundTruth
 
 
-def _require_string(
-    data: dict[str, Any],
-    key: str,
-) -> str:
-    value = data.get(key)
-
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{key!r} must be a non-empty string")
-
+def _string_value(value: Any, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a non-empty string")
+    if not value.strip():
+        raise ValueError(f"{label} must be a non-empty string")
     return value.strip()
 
 
-def _string_tuple(
-    data: dict[str, Any],
-    key: str,
-) -> tuple[str, ...]:
-    value = data.get(key, [])
+def _require_string(data: dict[str, Any], key: str) -> str:
+    return _string_value(data.get(key), repr(key))
 
+
+def _string_tuple(data: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = data.get(key, [])
     if value is None:
         return ()
-
     if not isinstance(value, list):
         raise ValueError(f"expected.{key} must be a list")
-
-    result = []
-
-    for item in value:
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"expected.{key} entries must be non-empty strings")
-
-        result.append(item.strip())
-
-    return tuple(result)
+    return tuple(_string_value(item, f"expected.{key} entry") for item in value)
 
 
 def _mapping(value: Any, allowed: frozenset[str], label: str) -> dict:

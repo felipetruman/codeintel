@@ -35,42 +35,27 @@ def task() -> BenchmarkTask:
     )
 
 
-def result(
-    *,
-    runner: str,
-    success: bool = True,
-    duration_ms: float = 1000.0,
-    files: list[str] | None = None,
-    files_read: list[str] | None = None,
-    tool_calls: int = 2,
-    input_tokens: int | None = 1000,
-    output_tokens: int | None = 100,
-) -> BenchmarkResult:
+def result(*, runner: str, **overrides) -> BenchmarkResult:
+    values = {
+        "success": True,
+        "duration_ms": 1000.0,
+        "files": ["src/payment.py", "src/noise.py"],
+        "files_read": None,
+        "tool_calls": 2,
+        "input_tokens": 1000,
+        "output_tokens": 100,
+    }
+    values.update(overrides)
     return BenchmarkResult(
         runner=runner,
         task_id="agent-metrics",
-        success=success,
-        duration_ms=duration_ms,
-        files=(
-            files
-            if files is not None
-            else [
-                "src/payment.py",
-                "src/noise.py",
-            ]
-        ),
-        symbols=[],
-        tool_calls=[{"name": f"tool-{index}"} for index in range(tool_calls)],
-        tokens=TokenUsage(
-            input=input_tokens,
-            output=output_tokens,
-        ),
-        stdout="",
-        stderr="",
+        success=values["success"],
+        duration_ms=values["duration_ms"],
+        files=values["files"],
+        tool_calls=[{"name": f"tool-{i}"} for i in range(values["tool_calls"])],
+        tokens=TokenUsage(values["input_tokens"], values["output_tokens"]),
         exit_code=0,
-        metadata={
-            "files_read": files_read,
-        },
+        metadata={"files_read": values["files_read"]},
     )
 
 

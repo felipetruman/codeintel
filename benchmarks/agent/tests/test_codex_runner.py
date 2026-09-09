@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from benchmarks.agent.runners.codex import CodexInvocation
+
 import json
 import os
 from pathlib import Path
@@ -54,14 +56,14 @@ def test_baseline_is_ephemeral_and_read_only(
 ):
     argv = build_codex_command(
         CodexConfig(
-            executable="codex",
-            model="test-model",
-            codeintel_binary="codeintel",
+            executable="codex", model="test-model", codeintel_binary="codeintel"
         ),
-        repo=tmp_path,
-        prompt="test prompt",
-        codeintel_enabled=False,
-        schema_path=Path("/tmp/schema.json"),
+        CodexInvocation(
+            repo=tmp_path,
+            prompt="test prompt",
+            codeintel_enabled=False,
+            schema_path=Path("/tmp/schema.json"),
+        ),
     )
 
     assert argv[:2] == [
@@ -91,14 +93,13 @@ def test_codeintel_arm_adds_inline_mcp(
     tmp_path: Path,
 ):
     argv = build_codex_command(
-        CodexConfig(
-            executable="codex",
-            codeintel_binary=("/opt/codeintel"),
+        CodexConfig(executable="codex", codeintel_binary="/opt/codeintel"),
+        CodexInvocation(
+            repo=tmp_path,
+            prompt="test prompt",
+            codeintel_enabled=True,
+            schema_path=Path("/tmp/schema.json"),
         ),
-        repo=tmp_path,
-        prompt="test prompt",
-        codeintel_enabled=True,
-        schema_path=Path("/tmp/schema.json"),
     )
 
     overrides = [
@@ -131,18 +132,22 @@ def test_ab_commands_only_differ_by_codeintel_mcp(
 
     baseline = build_codex_command(
         config,
-        repo=tmp_path,
-        prompt="same prompt",
-        codeintel_enabled=False,
-        schema_path=schema,
+        CodexInvocation(
+            repo=tmp_path,
+            prompt="same prompt",
+            codeintel_enabled=False,
+            schema_path=schema,
+        ),
     )
 
     enhanced = build_codex_command(
         config,
-        repo=tmp_path,
-        prompt="same prompt",
-        codeintel_enabled=True,
-        schema_path=schema,
+        CodexInvocation(
+            repo=tmp_path,
+            prompt="same prompt",
+            codeintel_enabled=True,
+            schema_path=schema,
+        ),
     )
 
     assert strip_codeintel_overrides(enhanced) == baseline

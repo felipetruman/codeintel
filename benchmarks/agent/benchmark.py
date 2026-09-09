@@ -164,7 +164,10 @@ def _source_resolver(
         def resolve(
             task: BenchmarkTask,
         ) -> Path:
-            source = AGENT_ROOT / "corpus" / task.corpus
+            corpus_root = (AGENT_ROOT / "corpus").resolve()
+            source = (corpus_root / task.corpus).resolve()
+            if not source.is_relative_to(corpus_root):
+                raise ValueError("synthetic corpus must stay inside corpus directory")
 
             if not source.is_dir():
                 raise ValueError("synthetic corpus does not exist: " f"{source}")

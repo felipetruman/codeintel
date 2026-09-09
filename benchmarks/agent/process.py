@@ -12,6 +12,13 @@ import time
 
 
 @dataclass(frozen=True)
+class ProcessOptions:
+    env: Mapping[str, str] | None = None
+    max_output_bytes: int = 8 * 1024 * 1024
+    inherit_env: bool = True
+
+
+@dataclass(frozen=True)
 class ProcessResult:
     argv: list[str]
     stdout: str
@@ -68,11 +75,15 @@ def _capture(
     return buffers, False, False
 
 
-def _validate(argv: list[str], cwd: Path, timeout: float, limit: int) -> None:
-    if not argv:
-        raise ValueError("argv must not be empty")
+def _validate_timeout(timeout: float) -> None:
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("timeout_seconds must be finite and > 0")
+
+
+def _validate(argv: list[str], cwd: Path, timeout: float, limit: int) -> None:
+    _validate_timeout(timeout)
+    if not argv:
+        raise ValueError("argv must not be empty")
     if not cwd.is_dir():
         raise ValueError(f"cwd is not a directory: {cwd}")
     if limit <= 0:
@@ -83,10 +94,11 @@ def run_process(
     argv: list[str],
     cwd: Path,
     timeout_seconds: float,
-    env: Mapping[str, str] | None = None,
-    max_output_bytes: int = 8 * 1024 * 1024,
-    inherit_env: bool = True,
+    options: ProcessOptions | None = None,
 ) -> ProcessResult:
+    options = options or ProcessOptions()
+    env, max_output_bytes = options.env, options.max_output_bytes
+    inherit_env = options.inherit_env
     root = Path(cwd)
     _validate(argv, root, timeout_seconds, max_output_bytes)
     effective_env = {**os.environ, **(env or {})} if inherit_env else dict(env or {})

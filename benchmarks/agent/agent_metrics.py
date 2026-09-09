@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 import math
 from benchmarks.agent.scoring.retrieval import precision, recall
 
@@ -31,7 +31,7 @@ class AgentMetrics:
     file_precision: float
     file_recall: float
 
-    tool_calls: int
+    tool_calls: int | None
 
     input_tokens: int | None
     output_tokens: int | None
@@ -57,8 +57,8 @@ class PairComparison:
     output_token_reduction_pct: float | None
     total_token_reduction_pct: float | None
 
-    file_precision_delta: float
-    file_recall_delta: float
+    file_precision_delta: float | None
+    file_recall_delta: float | None
 
     tool_call_reduction_pct: float | None
 
@@ -145,7 +145,11 @@ def agent_metrics(
         irrelevant_files_read=(irrelevant_read),
         file_precision=precision,
         file_recall=recall,
-        tool_calls=len(result.tool_calls),
+        tool_calls=(
+            len(result.tool_calls)
+            if result.metadata.get("tool_calls_observed", True)
+            else None
+        ),
         input_tokens=(result.tokens.input),
         output_tokens=(result.tokens.output),
         total_tokens=(result.tokens.total),
@@ -179,7 +183,7 @@ def compare_pair(
     bc, ec = estimated_cost(baseline.tokens, pricing), estimated_cost(
         enhanced.tokens, pricing
     )
-    return PairComparison(
+    comparison = PairComparison(
         task_id=task.id,
         baseline_runner=baseline.runner,
         enhanced_runner=enhanced.runner,
@@ -199,4 +203,15 @@ def compare_pair(
         baseline_cost_usd=bc,
         enhanced_cost_usd=ec,
         cost_reduction_pct=percent_reduction(bc, ec),
+    )
+
+    if baseline.success and enhanced.success:
+        return comparison
+    unavailable = {
+        field.name: None
+        for field in fields(PairComparison)
+        if field.name.endswith("_reduction_pct")
+    }
+    return replace(
+        comparison, file_precision_delta=None, file_recall_delta=None, **unavailable
     )

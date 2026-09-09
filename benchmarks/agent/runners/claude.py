@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from benchmarks.agent.runners.agent_sandbox import AgentProcessOptions
+
 from dataclasses import dataclass, replace
 import json
 from pathlib import Path
@@ -259,10 +261,12 @@ class ClaudeRunner:
         process = run_process(
             argv,
             cwd=repo,
-            agent="claude",
-            timeout_seconds=(self.config.timeout_seconds),
-            codeintel_binary=(
-                self.config.codeintel_binary if self.codeintel_enabled else None
+            timeout_seconds=self.config.timeout_seconds,
+            options=AgentProcessOptions(
+                agent="claude",
+                codeintel_binary=(
+                    self.config.codeintel_binary if self.codeintel_enabled else None
+                ),
             ),
         )
 
@@ -296,6 +300,7 @@ class ClaudeRunner:
                 "codeintel_enabled": (self.codeintel_enabled),
                 "telemetry_format": ("claude-stream-json"),
                 "structured_output": (telemetry.structured_output),
+                "tool_calls_observed": bool(telemetry.tool_calls),
                 "files_read": (telemetry.files_read),
                 "usage": (telemetry.raw_usage),
                 "timed_out": (process.timed_out),

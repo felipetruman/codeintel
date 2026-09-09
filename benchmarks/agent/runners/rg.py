@@ -80,6 +80,9 @@ class RgRunner:
             [
                 self.binary,
                 "--json",
+                "--no-config",
+                "--sort",
+                "path",
                 "--line-number",
                 "--column",
                 "--fixed-strings",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +40,25 @@ from benchmarks.agent.runners.codeintel import (
 )
 from benchmarks.agent.runners.rg import RgRunner
 from benchmarks.agent.scheduler import score_result
+
+
+@dataclass(frozen=True)
+class RunnerSettings:
+    codeintel_binary: str
+    rg_binary: str
+    codeintel_mode: str
+    deterministic_timeout: float
+    agent_timeout: float
+    claude_model: str | None
+    codex_model: str | None
+
+
+@dataclass(frozen=True)
+class MatrixSettings:
+    repeat: int
+    seed: int
+    source_resolver: Callable[[BenchmarkTask], Path]
+
 
 AGENT_ROOT = Path(__file__).resolve().parent
 
@@ -100,33 +121,25 @@ def _git_sha(
     return value or None
 
 
-def build_runners(
-    names: list[str],
-    *,
-    codeintel_binary: str,
-    rg_binary: str,
-    codeintel_mode: str,
-    deterministic_timeout: float,
-    agent_timeout: float,
-    claude_model: str | None,
-    codex_model: str | None,
-) -> dict[str, Runner]:
+def build_runners(names: list[str], settings: RunnerSettings) -> dict[str, Runner]:
     claude_config = ClaudeConfig(
-        model=claude_model,
-        timeout_seconds=agent_timeout,
-        codeintel_binary=codeintel_binary,
+        model=settings.claude_model,
+        timeout_seconds=settings.agent_timeout,
+        codeintel_binary=settings.codeintel_binary,
     )
     codex_config = CodexConfig(
-        model=codex_model,
-        timeout_seconds=agent_timeout,
-        codeintel_binary=codeintel_binary,
+        model=settings.codex_model,
+        timeout_seconds=settings.agent_timeout,
+        codeintel_binary=settings.codeintel_binary,
     )
     factories = {
-        "rg": lambda: RgRunner(binary=rg_binary, timeout_seconds=deterministic_timeout),
+        "rg": lambda: RgRunner(
+            binary=settings.rg_binary, timeout_seconds=settings.deterministic_timeout
+        ),
         "codeintel": lambda: CodeIntelRunner(
-            binary=codeintel_binary,
-            mode=codeintel_mode,
-            timeout_seconds=deterministic_timeout,
+            binary=settings.codeintel_binary,
+            mode=settings.codeintel_mode,
+            timeout_seconds=settings.deterministic_timeout,
         ),
         "claude": lambda: ClaudeRunner(False, claude_config),
         "claude-codeintel": lambda: ClaudeRunner(True, claude_config),
@@ -136,16 +149,22 @@ def build_runners(
     return {name: factories[name]() for name in names}
 
 
+def _synthetic_source(task: BenchmarkTask) -> Path:
+    corpus = (AGENT_ROOT / "corpus").resolve()
+    source = (corpus / task.corpus).resolve()
+    if not source.is_relative_to(corpus):
+        raise ValueError("synthetic corpus must stay inside the corpus directory")
+    return source
+
+
+def _repository_source(repo: Path | None) -> Path:
+    if repo is None:
+        raise ValueError("repository path is required")
+    return repo.resolve()
+
+
 def _task_source(task: BenchmarkTask, *, synthetic: bool, repo: Path | None) -> Path:
-    if synthetic:
-        corpus = (AGENT_ROOT / "corpus").resolve()
-        source = (corpus / task.corpus).resolve()
-        if not source.is_relative_to(corpus):
-            raise ValueError("synthetic corpus must stay inside the corpus directory")
-    else:
-        if repo is None:
-            raise ValueError("repository path is required")
-        source = repo.resolve()
+    source = _synthetic_source(task) if synthetic else _repository_source(repo)
     if not source.is_dir():
         raise FileNotFoundError(f"corpus/repository not found: {source}")
     return source
@@ -173,14 +192,11 @@ def _execute_one(
 
 
 def execute_matrix(
-    *,
-    tasks: list[BenchmarkTask],
-    runner_names: list[str],
-    runners: dict[str, Runner],
-    repeat: int,
-    seed: int,
-    source_resolver: Callable[[BenchmarkTask], Path],
+    tasks: list[BenchmarkTask], runners: dict[str, Runner], settings: MatrixSettings
 ) -> list[BenchmarkResult]:
+    runner_names = list(runners)
+    repeat, seed = settings.repeat, settings.seed
+    source_resolver = settings.source_resolver
     results = []
     for task in tasks:
         source = source_resolver(task)
@@ -327,6 +343,10 @@ def main(
         parser.error(str(error))
 
     tasks = load_tasks(args.tasks)
+    if not tasks:
+        parser.error("no benchmark tasks found")
+    if len({task.id for task in tasks}) != len(tasks):
+        parser.error("benchmark task IDs must be unique")
 
     if args.plan:
         _print_plan(
@@ -352,13 +372,15 @@ def main(
 def _execute(args, runner_names, tasks) -> int:
     runners = build_runners(
         runner_names,
-        codeintel_binary=(args.codeintel_binary),
-        rg_binary=(args.rg_binary),
-        codeintel_mode=(args.codeintel_mode),
-        deterministic_timeout=(args.deterministic_timeout),
-        agent_timeout=(args.agent_timeout),
-        claude_model=(args.claude_model),
-        codex_model=(args.codex_model),
+        RunnerSettings(
+            codeintel_binary=args.codeintel_binary,
+            rg_binary=args.rg_binary,
+            codeintel_mode=args.codeintel_mode,
+            deterministic_timeout=args.deterministic_timeout,
+            agent_timeout=args.agent_timeout,
+            claude_model=args.claude_model,
+            codex_model=args.codex_model,
+        ),
     )
 
     source_resolver = lambda task: _task_source(
@@ -368,12 +390,11 @@ def _execute(args, runner_names, tasks) -> int:
     )
 
     results = execute_matrix(
-        tasks=tasks,
-        runner_names=runner_names,
-        runners=runners,
-        repeat=args.repeat,
-        seed=args.seed,
-        source_resolver=(source_resolver),
+        tasks,
+        runners,
+        MatrixSettings(
+            repeat=args.repeat, seed=args.seed, source_resolver=source_resolver
+        ),
     )
 
     metadata = _make_run_metadata(

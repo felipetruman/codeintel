@@ -4,7 +4,6 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
-import math
 from typing import Any
 
 from benchmarks.agent.manifests import (
@@ -14,8 +13,13 @@ from benchmarks.agent.models import (
     BenchmarkResult,
     TokenUsage,
 )
-from benchmarks.agent.runners.agent_protocol import nonnegative_int
+from benchmarks.agent.runners.agent_protocol import (
+    nonnegative_int,
+    string_list,
+    relative_path,
+)
 from benchmarks.agent.process import (
+    _validate_timeout,
     run_process,
 )
 
@@ -67,8 +71,7 @@ def validate_command(command: AgentCommand) -> None:
         raise ValueError("agent command name must not be empty")
     if not command.argv:
         raise ValueError("agent argv must not be empty")
-    if not math.isfinite(command.timeout_seconds) or command.timeout_seconds <= 0:
-        raise ValueError("agent timeout must be finite and greater than zero")
+    _validate_timeout(command.timeout_seconds)
     executable = Path(command.argv[0]).name
     if executable in SHELL_EXECUTABLES:
         raise ValueError("shell wrapper commands are not allowed")
@@ -109,16 +112,14 @@ def _string_list(
     return result
 
 
-def _tool_calls(
-    value: Any,
-) -> list[Any]:
-    if not isinstance(
-        value,
-        list,
-    ):
+def _tool_calls(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
         return []
-
-    return value
+    return [
+        {"name": item["name"]}
+        for item in value
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
 
 
 def _token_usage(
@@ -149,26 +150,18 @@ def _token_usage(
     )
 
 
-def _json_payload(
-    stdout: str,
-) -> dict[str, Any] | None:
-    value = stdout.strip()
-
-    if not value:
-        return None
-
+def _json_payload(stdout: str, repo: Path) -> dict[str, Any] | None:
     try:
-        payload = json.loads(value)
-    except json.JSONDecodeError:
+        payload = json.loads(stdout)
+        if not isinstance(payload, dict):
+            return None
+        payload["files"] = [
+            relative_path(value, repo) for value in string_list(payload["files"])
+        ]
+        payload["symbols"] = string_list(payload["symbols"])
+        return payload
+    except (ValueError, TypeError, KeyError):
         return None
-
-    if not isinstance(
-        payload,
-        dict,
-    ):
-        return None
-
-    return payload
 
 
 class GenericAgentRunner:
@@ -198,7 +191,7 @@ class GenericAgentRunner:
             timeout_seconds=(self.command.timeout_seconds),
         )
 
-        payload = _json_payload(process.stdout)
+        payload = _json_payload(process.stdout, repo)
 
         files: list[str] = []
         symbols: list[str] = []
@@ -238,5 +231,7 @@ class GenericAgentRunner:
                 "agent": self.command.name,
                 "codeintel_enabled": (self.command.codeintel_enabled),
                 "telemetry_format": (telemetry_format),
+                "tool_calls_observed": payload is not None
+                and isinstance(payload.get("tool_calls"), list),
             },
         )
