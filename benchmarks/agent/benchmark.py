@@ -155,26 +155,22 @@ def _metadata(
     )
 
 
+def _synthetic_source(task: BenchmarkTask) -> Path:
+    corpus_root = (AGENT_ROOT / "corpus").resolve()
+    source = (corpus_root / task.corpus).resolve()
+    if not source.is_relative_to(corpus_root):
+        raise ValueError("synthetic corpus must stay inside corpus directory")
+    if not source.is_dir():
+        raise ValueError(f"synthetic corpus does not exist: {source}")
+    return source
+
+
 def _source_resolver(
     corpus: str | None,
     repo: Path | None,
 ):
     if corpus == "synthetic":
-
-        def resolve(
-            task: BenchmarkTask,
-        ) -> Path:
-            corpus_root = (AGENT_ROOT / "corpus").resolve()
-            source = (corpus_root / task.corpus).resolve()
-            if not source.is_relative_to(corpus_root):
-                raise ValueError("synthetic corpus must stay inside corpus directory")
-
-            if not source.is_dir():
-                raise ValueError("synthetic corpus does not exist: " f"{source}")
-
-            return source
-
-        return resolve
+        return _synthetic_source
 
     if repo is None:
         raise ValueError("repository path is required")
