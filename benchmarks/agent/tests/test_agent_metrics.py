@@ -60,14 +60,7 @@ def result(
             ]
         ),
         symbols=[],
-        tool_calls=[
-            {
-                "name": f"tool-{index}"
-            }
-            for index in range(
-                tool_calls
-            )
-        ],
+        tool_calls=[{"name": f"tool-{index}"} for index in range(tool_calls)],
         tokens=TokenUsage(
             input=input_tokens,
             output=output_tokens,
@@ -94,20 +87,29 @@ def test_percent_reduction():
 
 
 def test_percent_reduction_missing_or_zero_baseline_is_null():
-    assert percent_reduction(
-        None,
-        10,
-    ) is None
+    assert (
+        percent_reduction(
+            None,
+            10,
+        )
+        is None
+    )
 
-    assert percent_reduction(
-        10,
-        None,
-    ) is None
+    assert (
+        percent_reduction(
+            10,
+            None,
+        )
+        is None
+    )
 
-    assert percent_reduction(
-        0,
-        0,
-    ) is None
+    assert (
+        percent_reduction(
+            0,
+            0,
+        )
+        is None
+    )
 
 
 def test_agent_metrics_scores_final_retrieved_files():
@@ -134,13 +136,9 @@ def test_agent_metrics_scores_final_retrieved_files():
     assert metrics.relevant_files_read == 2
     assert metrics.irrelevant_files_read == 1
 
-    assert metrics.file_precision == pytest.approx(
-        0.5
-    )
+    assert metrics.file_precision == pytest.approx(0.5)
 
-    assert metrics.file_recall == pytest.approx(
-        0.5
-    )
+    assert metrics.file_recall == pytest.approx(0.5)
 
     assert metrics.tool_calls == 2
     assert metrics.input_tokens == 1000
@@ -197,29 +195,17 @@ def test_compare_pair_computes_ab_reductions():
         task(),
     )
 
-    assert comparison.duration_reduction_pct == pytest.approx(
-        20.0
-    )
+    assert comparison.duration_reduction_pct == pytest.approx(20.0)
 
-    assert comparison.input_token_reduction_pct == pytest.approx(
-        25.0
-    )
+    assert comparison.input_token_reduction_pct == pytest.approx(25.0)
 
-    assert comparison.total_token_reduction_pct == pytest.approx(
-        25.0
-    )
+    assert comparison.total_token_reduction_pct == pytest.approx(25.0)
 
-    assert comparison.files_read_reduction_pct == pytest.approx(
-        50.0
-    )
+    assert comparison.files_read_reduction_pct == pytest.approx(50.0)
 
-    assert comparison.file_precision_delta == pytest.approx(
-        0.5
-    )
+    assert comparison.file_precision_delta == pytest.approx(0.5)
 
-    assert comparison.file_recall_delta == pytest.approx(
-        0.5
-    )
+    assert comparison.file_recall_delta == pytest.approx(0.5)
 
 
 def test_compare_pair_requires_same_task():
@@ -257,34 +243,16 @@ def test_compare_pair_requires_same_task():
         )
 
 
-def test_estimated_cost_uses_user_supplied_pricing():
-    pricing = Pricing(
-        input_per_million=3.0,
-        output_per_million=15.0,
-    )
-
-    assert estimated_cost(
-        TokenUsage(
-            input=1_000_000,
-            output=1_000_000,
-        ),
-        pricing,
-    ) == pytest.approx(18.0)
-
-
-def test_estimated_cost_missing_usage_is_null():
-    pricing = Pricing(
-        input_per_million=3.0,
-        output_per_million=15.0,
-    )
-
-    assert estimated_cost(
-        TokenUsage(
-            input=None,
-            output=10,
-        ),
-        pricing,
-    ) is None
+@pytest.mark.parametrize(
+    "usage, expected",
+    [
+        (TokenUsage(input=1_000_000, output=1_000_000), 18.0),
+        (TokenUsage(input=None, output=10), None),
+    ],
+)
+def test_estimated_cost_with_optional_usage(usage, expected):
+    cost = estimated_cost(usage, Pricing(3.0, 15.0))
+    assert cost == expected
 
 
 def test_compare_pair_cost_is_optional():

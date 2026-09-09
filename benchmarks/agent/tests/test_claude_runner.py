@@ -59,9 +59,7 @@ def test_baseline_uses_strict_empty_mcp_config(
     assert "--permission-mode" in argv
     assert "plan" in argv
 
-    assert mcp_payload(argv) == {
-        "mcpServers": {}
-    }
+    assert mcp_payload(argv) == {"mcpServers": {}}
 
 
 def test_codeintel_arm_has_only_benchmark_mcp(
@@ -79,13 +77,9 @@ def test_codeintel_arm_has_only_benchmark_mcp(
 
     payload = mcp_payload(argv)
 
-    assert set(
-        payload["mcpServers"]
-    ) == {"codeintel"}
+    assert set(payload["mcpServers"]) == {"codeintel"}
 
-    server = payload[
-        "mcpServers"
-    ]["codeintel"]
+    server = payload["mcpServers"]["codeintel"]
 
     assert server["type"] == "stdio"
     assert server["command"] == "/opt/codeintel"
@@ -119,9 +113,7 @@ def test_ab_commands_differ_only_in_mcp_payload(
         codeintel_enabled=True,
     )
 
-    index = baseline.index(
-        "--mcp-config"
-    )
+    index = baseline.index("--mcp-config")
 
     baseline[index + 1] = "<MCP>"
     enhanced[index + 1] = "<MCP>"
@@ -132,89 +124,20 @@ def test_ab_commands_differ_only_in_mcp_payload(
 def test_parser_extracts_structured_output_tools_and_usage(
     tmp_path: Path,
 ):
-    source = (
-        tmp_path
-        / "src"
-        / "payment.py"
-    )
-
-    stdout = "\n".join(
-        [
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {
-                        "content": [
-                            {
-                                "type": "tool_use",
-                                "id": "tool-1",
-                                "name": "Read",
-                                "input": {
-                                    "file_path": str(
-                                        source
-                                    )
-                                },
-                            },
-                            {
-                                "type": "tool_use",
-                                "id": "tool-2",
-                                "name": (
-                                    "mcp__codeintel__search"
-                                ),
-                                "input": {
-                                    "query": "payment"
-                                },
-                            },
-                        ]
-                    },
-                }
-            ),
-            json.dumps(
-                {
-                    "type": "result",
-                    "subtype": "success",
-                    "is_error": False,
-                    "usage": {
-                        "input_tokens": 10,
-                        "cache_read_input_tokens": 7,
-                        "cache_creation_input_tokens": 3,
-                        "output_tokens": 4,
-                    },
-                    "structured_output": {
-                        "files": [
-                            "src/payment.py"
-                        ],
-                        "symbols": [
-                            "process_payment"
-                        ],
-                        "answer": "Found it.",
-                    },
-                }
-            ),
-        ]
-    )
+    stdout = _stream_parser_extracts_structured_output_tools_and_usage(tmp_path)
 
     telemetry = parse_claude_stream(
         stdout,
         tmp_path,
     )
 
-    assert telemetry.files == [
-        "src/payment.py"
-    ]
+    assert telemetry.files == ["src/payment.py"]
 
-    assert telemetry.symbols == [
-        "process_payment"
-    ]
+    assert telemetry.symbols == ["process_payment"]
 
-    assert telemetry.files_read == [
-        "src/payment.py"
-    ]
+    assert telemetry.files_read == ["src/payment.py"]
 
-    assert [
-        call["name"]
-        for call in telemetry.tool_calls
-    ] == [
+    assert [call["name"] for call in telemetry.tool_calls] == [
         "Read",
         "mcp__codeintel__search",
     ]
@@ -272,29 +195,18 @@ def test_runner_does_not_persist_raw_agent_stream(
     assert result.success is True
     assert result.stdout == ""
     assert result.stderr == ""
-    assert result.metadata[
-        "stderr_present"
-    ] is True
+    assert result.metadata["stderr_present"] is True
 
 
 @pytest.mark.skipif(
-    os.getenv(
-        "CODEINTEL_BENCH_REAL_AGENTS"
-    )
-    != "1",
-    reason=(
-        "real agent tests are opt-in"
-    ),
+    os.getenv("CODEINTEL_BENCH_REAL_AGENTS") != "1",
+    reason=("real agent tests are opt-in"),
 )
 def test_real_claude_agent_opt_in(
     tmp_path: Path,
 ):
-    (
-        tmp_path
-        / "payment.py"
-    ).write_text(
-        "def process_payment():\n"
-        "    return True\n",
+    (tmp_path / "payment.py").write_text(
+        "def process_payment():\n" "    return True\n",
         encoding="utf-8",
     )
 
@@ -309,3 +221,66 @@ def test_real_claude_agent_opt_in(
     )
 
     assert result.success is True
+
+
+def _stream_parser_extracts_structured_output_tools_and_usage(tmp_path):
+    return "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "tool-1",
+                                "name": "Read",
+                                "input": {
+                                    "file_path": str(tmp_path / "src" / "payment.py")
+                                },
+                            },
+                            {
+                                "type": "tool_use",
+                                "id": "tool-2",
+                                "name": "mcp__codeintel__search",
+                                "input": {"query": "payment"},
+                            },
+                        ]
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "tool-1",
+                                "is_error": False,
+                                "content": "file contents omitted",
+                            }
+                        ]
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "usage": {
+                        "input_tokens": 10,
+                        "cache_read_input_tokens": 7,
+                        "cache_creation_input_tokens": 3,
+                        "output_tokens": 4,
+                    },
+                    "structured_output": {
+                        "files": ["src/payment.py"],
+                        "symbols": ["process_payment"],
+                        "answer": "Found it.",
+                    },
+                }
+            ),
+        ]
+    )

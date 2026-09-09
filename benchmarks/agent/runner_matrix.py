@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 DEFAULT_RUNNERS = (
     "rg",
     "codeintel",
@@ -25,75 +24,39 @@ AGENT_RUNNERS = frozenset(
 )
 
 
-def resolve_runner_names(
-    requested: list[str],
-    all_runners: bool,
-) -> list[str]:
+def resolve_runner_names(requested: list[str], all_runners: bool) -> list[str]:
     if all_runners and requested:
-        raise ValueError(
-            "--all cannot be combined with --runner"
-        )
-
+        raise ValueError("--all cannot be combined with --runner")
     if all_runners:
         return list(ALL_RUNNERS)
-
-    if not requested:
-        return list(DEFAULT_RUNNERS)
-
-    result: list[str] = []
-
-    for runner in requested:
-        if runner not in ALL_RUNNERS:
-            raise ValueError(
-                f"unknown runner: {runner}"
-            )
-
-        if runner not in result:
-            result.append(runner)
-
-    return result
+    unknown = set(requested).difference(ALL_RUNNERS)
+    if unknown:
+        raise ValueError(f"unknown runner: {sorted(unknown)}")
+    return list(dict.fromkeys(requested or DEFAULT_RUNNERS))
 
 
 def contains_real_agents(
     runners: list[str],
 ) -> bool:
-    return any(
-        runner in AGENT_RUNNERS
-        for runner in runners
-    )
+    return any(runner in AGENT_RUNNERS for runner in runners)
 
 
 def require_real_agent_opt_in(
     runners: list[str],
     allowed: bool,
 ) -> None:
-    if (
-        contains_real_agents(runners)
-        and not allowed
-    ):
-        raise ValueError(
-            "real agent runners require "
-            "--allow-real-agents"
-        )
+    if contains_real_agents(runners) and not allowed:
+        raise ValueError("real agent runners require " "--allow-real-agents")
 
 
-def balanced_runner_order(
-    runners: list[str],
-    repetition: int,
-    seed: int,
-) -> list[str]:
+def balanced_runner_order(runners: list[str], repetition: int, seed: int) -> list[str]:
     if not runners:
         return []
-
-    offset = (
-        repetition
-        + seed
-    ) % len(runners)
-
-    return (
-        runners[offset:]
-        + runners[:offset]
-    )
+    offset = (seed + repetition // 2) % len(runners)
+    rotated = runners[offset:] + runners[:offset]
+    # Reverse the entire order on odd repetitions so every A/B pair is balanced,
+    # including when the full six-runner matrix is repeated only twice.
+    return rotated if repetition % 2 == 0 else list(reversed(rotated))
 
 
 def ab_pairs(
@@ -113,10 +76,5 @@ def ab_pairs(
     ]
 
     return [
-        pair
-        for pair in candidates
-        if (
-            pair[0] in available
-            and pair[1] in available
-        )
+        pair for pair in candidates if (pair[0] in available and pair[1] in available)
     ]

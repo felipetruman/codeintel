@@ -6,24 +6,13 @@ from benchmarks.agent.runners.codeintel import (
     CodeIntelRunner,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENT_ROOT = Path(__file__).resolve().parents[1]
-CODEINTEL = (
-    REPO_ROOT
-    / "target"
-    / "debug"
-    / "codeintel"
-)
+CODEINTEL = REPO_ROOT / "target" / "debug" / "codeintel"
 
 
 def fixture_copy(tmp_path):
-    source = (
-        AGENT_ROOT
-        / "corpus"
-        / "synthetic"
-        / "rust-cross-file"
-    )
+    source = AGENT_ROOT / "corpus" / "synthetic" / "rust-cross-file"
 
     repo = tmp_path / "repo"
 
@@ -93,20 +82,14 @@ def test_codeintel_runner_supports_all_operations(
 
     assert impact.success is True
 
-    assert impact.metadata[
-        "direct_callers"
-    ] == ["checkout"]
+    assert impact.metadata["direct_callers"] == ["checkout"]
 
-    assert impact.metadata[
-        "impacted"
-    ] == [
+    assert impact.metadata["impacted"] == [
         "checkout",
         "submit_order",
     ]
 
-    assert impact.metadata[
-        "blast_radius"
-    ] == 2
+    assert impact.metadata["blast_radius"] == 2
 
 
 def test_codeintel_runner_maps_impact_task(
@@ -114,11 +97,7 @@ def test_codeintel_runner_maps_impact_task(
 ):
     repo = fixture_copy(tmp_path)
 
-    task = load_task(
-        AGENT_ROOT
-        / "tasks"
-        / "impact-analysis.yaml"
-    )
+    task = load_task(AGENT_ROOT / "tasks" / "impact-analysis.yaml")
 
     result = runner().run(
         task,
@@ -126,9 +105,5 @@ def test_codeintel_runner_maps_impact_task(
     )
 
     assert result.success is True
-    assert result.metadata[
-        "operation"
-    ] == "impact"
-    assert result.metadata[
-        "direct_callers"
-    ] == ["checkout"]
+    assert result.metadata["operation"] == "impact"
+    assert result.metadata["direct_callers"] == ["checkout"]

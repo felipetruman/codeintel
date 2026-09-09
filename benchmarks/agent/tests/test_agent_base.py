@@ -73,22 +73,17 @@ def test_python_dict_braces_are_not_placeholders():
     validate_command(command)
 
 
-def test_command_requires_prompt_placeholder():
-    command = AgentCommand(
-        name="fake",
-        argv=(
-            "agent",
-            "--repo",
-            "{repo}",
-        ),
-        timeout_seconds=10,
-        codeintel_enabled=False,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="prompt",
-    ):
+@pytest.mark.parametrize(
+    "argv, timeout, message",
+    [
+        (("agent", "--repo", "{repo}"), 10, "prompt"),
+        (("agent", "{prompt}", "{secret}"), 10, "placeholder"),
+        (("agent", "{prompt}"), 0, "timeout"),
+    ],
+)
+def test_rejects_invalid_command(argv, timeout, message):
+    command = AgentCommand("fake", argv, timeout, False)
+    with pytest.raises(ValueError, match=message):
         validate_command(command)
 
 
@@ -111,43 +106,6 @@ def test_shell_wrappers_are_rejected(argv):
     with pytest.raises(
         ValueError,
         match="shell",
-    ):
-        validate_command(command)
-
-
-def test_unknown_placeholder_is_rejected():
-    command = AgentCommand(
-        name="fake",
-        argv=(
-            "agent",
-            "{prompt}",
-            "{secret}",
-        ),
-        timeout_seconds=10,
-        codeintel_enabled=False,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="placeholder",
-    ):
-        validate_command(command)
-
-
-def test_invalid_timeout_is_rejected():
-    command = AgentCommand(
-        name="fake",
-        argv=(
-            "agent",
-            "{prompt}",
-        ),
-        timeout_seconds=0,
-        codeintel_enabled=False,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="timeout",
     ):
         validate_command(command)
 
@@ -181,9 +139,7 @@ def test_generic_agent_normalizes_json_telemetry(
         codeintel_enabled=True,
     )
 
-    result = GenericAgentRunner(
-        command
-    ).run(
+    result = GenericAgentRunner(command).run(
         benchmark_task(),
         tmp_path,
     )
@@ -191,29 +147,19 @@ def test_generic_agent_normalizes_json_telemetry(
     assert result.success is True
     assert result.exit_code == 0
 
-    assert result.files == [
-        "src/payment.py"
-    ]
+    assert result.files == ["src/payment.py"]
 
-    assert result.symbols == [
-        "process_payment"
-    ]
+    assert result.symbols == ["process_payment"]
 
-    assert result.tool_calls == [
-        {"name": "read"}
-    ]
+    assert result.tool_calls == [{"name": "read"}]
 
     assert result.tokens.input == 12
     assert result.tokens.output == 3
     assert result.tokens.total == 15
 
-    assert result.metadata[
-        "codeintel_enabled"
-    ] is True
+    assert result.metadata["codeintel_enabled"] is True
 
-    assert result.metadata[
-        "telemetry_format"
-    ] == "json"
+    assert result.metadata["telemetry_format"] == "json"
 
 
 def test_missing_telemetry_remains_null(
@@ -231,14 +177,12 @@ def test_missing_telemetry_remains_null(
         codeintel_enabled=False,
     )
 
-    result = GenericAgentRunner(
-        command
-    ).run(
+    result = GenericAgentRunner(command).run(
         benchmark_task(),
         tmp_path,
     )
 
-    assert result.success is True
+    assert result.success is False
     assert result.files == []
     assert result.symbols == []
     assert result.tool_calls == []
@@ -247,9 +191,7 @@ def test_missing_telemetry_remains_null(
     assert result.tokens.output is None
     assert result.tokens.total is None
 
-    assert result.metadata[
-        "telemetry_format"
-    ] is None
+    assert result.metadata["telemetry_format"] is None
 
 
 def test_nonzero_agent_exit_is_failure(
@@ -267,9 +209,7 @@ def test_nonzero_agent_exit_is_failure(
         codeintel_enabled=False,
     )
 
-    result = GenericAgentRunner(
-        command
-    ).run(
+    result = GenericAgentRunner(command).run(
         benchmark_task(),
         tmp_path,
     )

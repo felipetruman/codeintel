@@ -4,17 +4,11 @@ import shutil
 from benchmarks.agent.manifests import load_task
 from benchmarks.agent.runners.rg import RgRunner
 
-
 AGENT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_rg_runner_finds_process_payment_files(tmp_path):
-    source = (
-        AGENT_ROOT
-        / "corpus"
-        / "synthetic"
-        / "rust-cross-file"
-    )
+    source = AGENT_ROOT / "corpus" / "synthetic" / "rust-cross-file"
 
     repo = tmp_path / "repo"
 
@@ -23,11 +17,7 @@ def test_rg_runner_finds_process_payment_files(tmp_path):
         repo,
     )
 
-    task = load_task(
-        AGENT_ROOT
-        / "tasks"
-        / "locate-symbol.yaml"
-    )
+    task = load_task(AGENT_ROOT / "tasks" / "locate-symbol.yaml")
 
     result = RgRunner().run(
         task,
@@ -40,10 +30,6 @@ def test_rg_runner_finds_process_payment_files(tmp_path):
     assert "src/payment.rs" in result.files
     assert "src/checkout.rs" in result.files
 
-    assert result.metadata[
-        "operation"
-    ] == "search"
+    assert result.metadata["operation"] == "search"
 
-    assert result.metadata[
-        "candidate_count"
-    ] >= 2
+    assert result.metadata["candidate_count"] >= 2

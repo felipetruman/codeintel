@@ -13,13 +13,9 @@ from benchmarks.agent.models import (
 
 def reporting_module():
     try:
-        return importlib.import_module(
-            "benchmarks.agent.reporting"
-        )
+        return importlib.import_module("benchmarks.agent.reporting")
     except ModuleNotFoundError as error:
-        raise AssertionError(
-            "benchmark reporting is not implemented"
-        ) from error
+        raise AssertionError("benchmark reporting is not implemented") from error
 
 
 def make_results():
@@ -75,33 +71,19 @@ def make_results():
 def test_summarize_groups_by_runner():
     module = reporting_module()
 
-    summary = module.summarize(
-        make_results()
-    )
+    summary = module.summarize(make_results())
 
     assert summary["total_results"] == 3
 
-    assert summary["runners"]["rg"][
-        "runs"
-    ] == 2
+    assert summary["runners"]["rg"]["runs"] == 2
 
-    assert summary["runners"]["rg"][
-        "successes"
-    ] == 1
+    assert summary["runners"]["rg"]["successes"] == 1
 
-    assert summary["runners"]["rg"][
-        "success_rate"
-    ] == 0.5
+    assert summary["runners"]["rg"]["success_rate"] == 0.5
 
-    assert summary["runners"]["rg"][
-        "avg_duration_ms"
-    ] == 20.0
+    assert summary["runners"]["rg"]["avg_duration_ms"] == 20.0
 
-    assert summary["runners"]["rg"][
-        "metrics"
-    ][
-        "file_precision"
-    ] == 0.5
+    assert summary["runners"]["rg"]["metrics"]["file_precision"] == 0.5
 
 
 def test_write_run_creates_all_machine_readable_outputs(
@@ -136,11 +118,7 @@ def test_write_run_creates_all_machine_readable_outputs(
         "csv",
     }
 
-    run = json.loads(
-        (tmp_path / "run.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    run = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
 
     assert run["run_id"] == "run-test"
     assert run["runners"] == [
@@ -148,11 +126,7 @@ def test_write_run_creates_all_machine_readable_outputs(
         "codeintel",
     ]
 
-    lines = (
-        tmp_path / "results.jsonl"
-    ).read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = (tmp_path / "results.jsonl").read_text(encoding="utf-8").splitlines()
 
     assert len(lines) == 3
 
@@ -164,30 +138,17 @@ def test_write_run_creates_all_machine_readable_outputs(
         "total": None,
     }
 
-    summary = json.loads(
-        (
-            tmp_path / "summary.json"
-        ).read_text(
-            encoding="utf-8"
-        )
-    )
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
 
     assert summary["total_results"] == 3
 
-    with (
-        tmp_path / "summary.csv"
-    ).open(
+    with (tmp_path / "summary.csv").open(
         newline="",
         encoding="utf-8",
     ) as handle:
-        rows = list(
-            csv.DictReader(handle)
-        )
+        rows = list(csv.DictReader(handle))
 
-    assert {
-        row["runner"]
-        for row in rows
-    } == {
+    assert {row["runner"] for row in rows} == {
         "rg",
         "codeintel",
     }
@@ -233,8 +194,4 @@ def test_json_output_is_deterministic(
         "summary.json",
         "summary.csv",
     ]:
-        assert (
-            first / filename
-        ).read_bytes() == (
-            second / filename
-        ).read_bytes()
+        assert (first / filename).read_bytes() == (second / filename).read_bytes()

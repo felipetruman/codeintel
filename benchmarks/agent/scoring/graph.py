@@ -16,14 +16,8 @@ def graph_metrics(
 ) -> dict[str, float | int | None]:
     error: int | None = None
 
-    if (
-        blast_radius is not None
-        and expected_blast_radius is not None
-    ):
-        error = abs(
-            blast_radius
-            - expected_blast_radius
-        )
+    if blast_radius is not None and expected_blast_radius is not None:
+        error = abs(blast_radius - expected_blast_radius)
 
     return {
         "direct_caller_precision": precision(

@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import os
+import selectors
 import signal
 import subprocess
 import time
@@ -17,33 +19,64 @@ class ProcessResult:
     exit_code: int | None
     duration_ms: float
     timed_out: bool
+    output_limited: bool = False
 
 
-def _terminate_process_group(
-    process: subprocess.Popen[str],
-) -> tuple[str, str]:
+def _kill_group(process: subprocess.Popen) -> None:
+    # Always kill the group, even if its leader has already exited. Children can
+    # close their inherited pipes and otherwise survive a successful command.
     try:
-        os.killpg(
-            process.pid,
-            signal.SIGTERM,
-        )
+        os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    process.wait(timeout=5)
 
+
+def _read_ready(selector, ready, buffers, remaining: int) -> int:
+    for key, _ in ready:
+        chunk = os.read(key.fd, min(65536, remaining + 1))
+        if not chunk:
+            selector.unregister(key.fileobj)
+            continue
+        buffers[key.data].extend(chunk[:remaining])
+        remaining -= len(chunk)
+        if remaining < 0:
+            return remaining
+    return remaining
+
+
+def _capture(
+    process, deadline: float, limit: int
+) -> tuple[list[bytearray], bool, bool]:
+    buffers = [bytearray(), bytearray()]
+    remaining = limit
+    with selectors.DefaultSelector() as selector:
+        selector.register(process.stdout, selectors.EVENT_READ, 0)
+        selector.register(process.stderr, selectors.EVENT_READ, 1)
+        while selector.get_map():
+            wait = deadline - time.monotonic()
+            if wait <= 0:
+                return buffers, True, False
+            ready = selector.select(min(wait, 0.05))
+            remaining = _read_ready(selector, ready, buffers, remaining)
+            if remaining < 0:
+                return buffers, False, True
     try:
-        return process.communicate(
-            timeout=0.5,
-        )
+        process.wait(timeout=max(0.001, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(
-                process.pid,
-                signal.SIGKILL,
-            )
-        except ProcessLookupError:
-            pass
+        return buffers, True, False
+    return buffers, False, False
 
-        return process.communicate()
+
+def _validate(argv: list[str], cwd: Path, timeout: float, limit: int) -> None:
+    if not argv:
+        raise ValueError("argv must not be empty")
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout_seconds must be finite and > 0")
+    if not cwd.is_dir():
+        raise ValueError(f"cwd is not a directory: {cwd}")
+    if limit <= 0:
+        raise ValueError("max_output_bytes must be > 0")
 
 
 def run_process(
@@ -51,70 +84,38 @@ def run_process(
     cwd: Path,
     timeout_seconds: float,
     env: Mapping[str, str] | None = None,
+    max_output_bytes: int = 8 * 1024 * 1024,
+    inherit_env: bool = True,
 ) -> ProcessResult:
-    if not argv:
-        raise ValueError(
-            "argv must not be empty"
-        )
-
-    if timeout_seconds <= 0:
-        raise ValueError(
-            "timeout_seconds must be > 0"
-        )
-
     root = Path(cwd)
-
-    if not root.is_dir():
-        raise ValueError(
-            f"cwd is not a directory: {root}"
-        )
-
-    effective_env = None
-
-    if env is not None:
-        effective_env = {
-            **os.environ,
-            **dict(env),
-        }
-
+    _validate(argv, root, timeout_seconds, max_output_bytes)
+    effective_env = {**os.environ, **(env or {})} if inherit_env else dict(env or {})
     started = time.monotonic()
-
-    process = subprocess.Popen(
+    with subprocess.Popen(
         argv,
         cwd=root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         shell=False,
         start_new_session=True,
         env=effective_env,
+    ) as process:
+        try:
+            buffers, timed_out, limited = _capture(
+                process, started + timeout_seconds, max_output_bytes
+            )
+        finally:
+            _kill_group(process)
+    stdout, stderr = (
+        bytes(buffer).decode("utf-8", errors="replace") for buffer in buffers
     )
-
-    timed_out = False
-
-    try:
-        stdout, stderr = process.communicate(
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        stdout, stderr = _terminate_process_group(
-            process
-        )
-
-    duration_ms = (
-        time.monotonic() - started
-    ) * 1000.0
-
+    exit_code = None if timed_out or limited else process.returncode
     return ProcessResult(
-        argv=list(argv),
-        stdout=stdout,
-        stderr=stderr,
-        exit_code=(
-            None
-            if timed_out
-            else process.returncode
-        ),
-        duration_ms=duration_ms,
-        timed_out=timed_out,
+        list(argv),
+        stdout,
+        stderr,
+        exit_code,
+        (time.monotonic() - started) * 1000,
+        timed_out,
+        limited,
     )

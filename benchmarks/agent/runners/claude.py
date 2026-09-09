@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 from typing import Any
@@ -10,35 +10,16 @@ from benchmarks.agent.models import (
     BenchmarkResult,
     TokenUsage,
 )
-from benchmarks.agent.process import run_process
-
-
-BENCHMARK_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "files": {
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-        },
-        "symbols": {
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-        },
-        "answer": {
-            "type": "string",
-        },
-    },
-    "required": [
-        "files",
-        "symbols",
-        "answer",
-    ],
-    "additionalProperties": False,
-}
+from benchmarks.agent.runners.agent_sandbox import run_agent_process as run_process
+from benchmarks.agent.runners.agent_protocol import (
+    BENCHMARK_OUTPUT_SCHEMA,
+    mcp_executable,
+    benchmark_prompt,
+    sanitized_usage,
+    json_lines,
+    relative_path,
+    structured_payload,
+)
 
 
 @dataclass(frozen=True)
@@ -53,27 +34,12 @@ class ClaudeConfig:
 class ClaudeTelemetry:
     files: list[str]
     symbols: list[str]
-    files_read: list[str]
+    files_read: list[str] | None
     tool_calls: list[dict[str, Any]]
     tokens: TokenUsage
     is_error: bool
     structured_output: bool
     raw_usage: dict[str, Any] | None
-
-
-def benchmark_prompt(
-    task: BenchmarkTask,
-) -> str:
-    return (
-        f"{task.prompt}\n\n"
-        "This is a read-only benchmark. "
-        "Do not modify repository files. "
-        "Investigate the repository and return "
-        "the requested structured result. "
-        "Use repository-relative paths in `files`. "
-        "`files` must contain files relevant to the answer. "
-        "`symbols` must contain relevant code symbols."
-    )
 
 
 def _mcp_config(
@@ -86,7 +52,7 @@ def _mcp_config(
     if codeintel_enabled:
         servers["codeintel"] = {
             "type": "stdio",
-            "command": config.codeintel_binary,
+            "command": mcp_executable(config.codeintel_binary),
             "args": [
                 "mcp",
                 str(repo.resolve()),
@@ -146,325 +112,122 @@ def build_claude_command(
             ]
         )
 
-    argv.append(prompt)
+    argv.extend(["--", prompt])
 
     return argv
 
 
-def _json_lines(
-    stdout: str,
-) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-
-    for line in stdout.splitlines():
-        line = line.strip()
-
-        if not line:
-            continue
-
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        if isinstance(value, dict):
-            result.append(value)
-
-    return result
-
-
-def _unique_strings(
-    value: Any,
-) -> list[str]:
-    if not isinstance(value, list):
-        return []
-
-    result: list[str] = []
-
-    for item in value:
-        if (
-            isinstance(item, str)
-            and item not in result
-        ):
-            result.append(item)
-
-    return result
-
-
-def _relative_path(
-    value: str,
-    repo: Path,
-) -> str:
-    path = Path(value)
-
-    if path.is_absolute():
-        try:
-            path = path.resolve().relative_to(
-                repo.resolve()
-            )
-        except ValueError:
-            return value
-
-    normalized = path.as_posix()
-
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-
-    return normalized
-
-
-def _normalize_files(
-    value: Any,
-    repo: Path,
-) -> list[str]:
-    result: list[str] = []
-
-    for item in _unique_strings(value):
-        normalized = _relative_path(
-            item,
-            repo,
-        )
-
-        if normalized not in result:
-            result.append(normalized)
-
-    return result
-
-
-def _usage(
-    value: Any,
-) -> TokenUsage:
-    if not isinstance(value, dict):
+def _usage(value: Any) -> TokenUsage:
+    usage = sanitized_usage(value)
+    if usage is None:
         return TokenUsage()
-
-    input_total = 0
-    input_seen = False
-
-    for key in (
-        "input_tokens",
-        "cache_read_input_tokens",
-        "cache_creation_input_tokens",
-    ):
-        raw = value.get(key)
-
-        if (
-            isinstance(raw, int)
-            and not isinstance(raw, bool)
-        ):
-            input_total += raw
-            input_seen = True
-
-    raw_output = value.get(
-        "output_tokens"
-    )
-
-    output_tokens = (
-        raw_output
-        if isinstance(raw_output, int)
-        and not isinstance(raw_output, bool)
-        else None
-    )
-
-    return TokenUsage(
-        input=(
-            input_total
-            if input_seen
-            else None
-        ),
-        output=output_tokens,
-    )
-
-
-def _structured_payload(
-    event: dict[str, Any],
-) -> dict[str, Any] | None:
-    value = event.get(
-        "structured_output"
-    )
-
-    if isinstance(value, dict):
-        return value
-
-    raw_result = event.get(
-        "result"
-    )
-
-    if not isinstance(
-        raw_result,
-        str,
-    ):
-        return None
-
-    try:
-        parsed = json.loads(
-            raw_result
+    inputs = [
+        usage[key]
+        for key in (
+            "input_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
         )
-    except json.JSONDecodeError:
-        return None
-
-    return (
-        parsed
-        if isinstance(parsed, dict)
-        else None
+        if key in usage
+    ]
+    return TokenUsage(
+        input=sum(inputs) if inputs else None, output=usage.get("output_tokens")
     )
 
 
-def parse_claude_stream(
-    stdout: str,
-    repo: Path,
+def _content(event: dict) -> list[dict]:
+    message = event.get("message", {})
+    if not isinstance(message, dict):
+        raise ValueError("message must be an object")
+    content = message.get("content", [])
+    if not isinstance(content, list):
+        raise ValueError("message content must be an array")
+    return [block for block in content if isinstance(block, dict)]
+
+
+def _record_tool(
+    block: dict, telemetry: ClaudeTelemetry, pending: dict, repo: Path
+) -> None:
+    name = block.get("name")
+    if not isinstance(name, str):
+        raise ValueError("tool name must be a string")
+    telemetry.tool_calls.append({"name": name})
+    if name not in {"Read", "NotebookRead"}:
+        return
+    tool_input = block.get("input", {})
+    if not isinstance(tool_input, dict):
+        raise ValueError("tool input must be an object")
+    path = tool_input.get("file_path", tool_input.get("notebook_path"))
+    if isinstance(path, str):
+        pending[block.get("id")] = relative_path(path, repo)
+
+
+def _completed_read(block: dict, pending: dict) -> str | None:
+    if block.get("type") != "tool_result":
+        return None
+    if block.get("is_error", False) is not False:
+        return None
+    return pending.pop(block.get("tool_use_id"), None)
+
+
+def _claude_result(
+    event: dict, telemetry: ClaudeTelemetry, repo: Path
 ) -> ClaudeTelemetry:
-    files: list[str] = []
-    symbols: list[str] = []
-    files_read: list[str] = []
-    tool_calls: list[
-        dict[str, Any]
-    ] = []
-
-    tokens = TokenUsage()
-    raw_usage = None
-    is_error = False
-    structured_seen = False
-
-    for event in _json_lines(stdout):
-        if event.get("type") == "assistant":
-            message = event.get(
-                "message"
-            )
-
-            if isinstance(
-                message,
-                dict,
-            ):
-                content = message.get(
-                    "content"
-                )
-
-                if isinstance(
-                    content,
-                    list,
-                ):
-                    for block in content:
-                        if not isinstance(
-                            block,
-                            dict,
-                        ):
-                            continue
-
-                        if (
-                            block.get("type")
-                            != "tool_use"
-                        ):
-                            continue
-
-                        name = block.get(
-                            "name"
-                        )
-
-                        if not isinstance(
-                            name,
-                            str,
-                        ):
-                            name = "unknown"
-
-                        tool_calls.append(
-                            {
-                                "name": name,
-                            }
-                        )
-
-                        tool_input = block.get(
-                            "input"
-                        )
-
-                        if (
-                            name
-                            in {
-                                "Read",
-                                "NotebookRead",
-                            }
-                            and isinstance(
-                                tool_input,
-                                dict,
-                            )
-                        ):
-                            file_path = (
-                                tool_input.get(
-                                    "file_path"
-                                )
-                            )
-
-                            if isinstance(
-                                file_path,
-                                str,
-                            ):
-                                normalized = (
-                                    _relative_path(
-                                        file_path,
-                                        repo,
-                                    )
-                                )
-
-                                if (
-                                    normalized
-                                    not in files_read
-                                ):
-                                    files_read.append(
-                                        normalized
-                                    )
-
-        if event.get("type") == "result":
-            is_error = bool(
-                event.get(
-                    "is_error",
-                    False,
-                )
-            )
-
-            usage_value = event.get(
-                "usage"
-            )
-
-            if isinstance(
-                usage_value,
-                dict,
-            ):
-                raw_usage = usage_value
-                tokens = _usage(
-                    usage_value
-                )
-
-            structured = (
-                _structured_payload(
-                    event
-                )
-            )
-
-            if structured is not None:
-                structured_seen = True
-
-                files = _normalize_files(
-                    structured.get(
-                        "files"
-                    ),
-                    repo,
-                )
-
-                symbols = _unique_strings(
-                    structured.get(
-                        "symbols"
-                    )
-                )
-
-    return ClaudeTelemetry(
+    payload = event.get("structured_output")
+    if payload is None:
+        payload = json.loads(event.get("result", ""))
+    files, symbols = structured_payload(payload, repo)
+    return replace(
+        telemetry,
         files=files,
         symbols=symbols,
-        files_read=files_read,
-        tool_calls=tool_calls,
-        tokens=tokens,
-        is_error=is_error,
-        structured_output=structured_seen,
-        raw_usage=raw_usage,
+        structured_output=True,
+        is_error=event.get("is_error", False) is not False,
+        raw_usage=sanitized_usage(event.get("usage")),
+        tokens=_usage(event.get("usage")),
     )
+
+
+def _read_events(
+    events: list[dict], telemetry: ClaudeTelemetry, pending: dict, repo: Path
+) -> list[str]:
+    reads = []
+    for event in events:
+        kind = event.get("type")
+        if kind == "assistant":
+            _assistant_events(event, telemetry, pending, repo)
+        if kind == "user":
+            reads.extend(
+                path
+                for block in _content(event)
+                if (path := _completed_read(block, pending)) is not None
+            )
+    return reads
+
+
+def _assistant_events(
+    event: dict, telemetry: ClaudeTelemetry, pending: dict, repo: Path
+) -> None:
+    for block in _content(event):
+        if block.get("type") == "tool_use":
+            _record_tool(block, telemetry, pending, repo)
+
+
+def parse_claude_stream(stdout: str, repo: Path) -> ClaudeTelemetry:
+    telemetry = ClaudeTelemetry([], [], None, [], TokenUsage(), True, False, None)
+    pending: dict[str, str] = {}
+    reads: list[str] = []
+    try:
+        events = json_lines(stdout)
+        results = [event for event in events if event.get("type") == "result"]
+        if len(results) != 1:
+            return telemetry
+        reads = _read_events(events, telemetry, pending, repo)
+        telemetry = _claude_result(results[0], telemetry, repo)
+    except (ValueError, TypeError):
+        return replace(telemetry, is_error=True, structured_output=False)
+    # Read events are a lower bound; without successful results telemetry is unknown.
+    return replace(telemetry, files_read=list(dict.fromkeys(reads)) if reads else None)
 
 
 class ClaudeRunner:
@@ -473,30 +236,18 @@ class ClaudeRunner:
         codeintel_enabled: bool,
         config: ClaudeConfig | None = None,
     ) -> None:
-        self.codeintel_enabled = (
-            codeintel_enabled
-        )
+        self.codeintel_enabled = codeintel_enabled
 
-        self.config = (
-            config
-            if config is not None
-            else ClaudeConfig()
-        )
+        self.config = config if config is not None else ClaudeConfig()
 
-        self.name = (
-            "claude-codeintel"
-            if codeintel_enabled
-            else "claude"
-        )
+        self.name = "claude-codeintel" if codeintel_enabled else "claude"
 
     def run(
         self,
         task: BenchmarkTask,
         repo: Path,
     ) -> BenchmarkResult:
-        prompt = benchmark_prompt(
-            task
-        )
+        prompt = benchmark_prompt(task)
 
         argv = build_claude_command(
             self.config,
@@ -508,8 +259,10 @@ class ClaudeRunner:
         process = run_process(
             argv,
             cwd=repo,
-            timeout_seconds=(
-                self.config.timeout_seconds
+            agent="claude",
+            timeout_seconds=(self.config.timeout_seconds),
+            codeintel_binary=(
+                self.config.codeintel_binary if self.codeintel_enabled else None
             ),
         )
 
@@ -522,6 +275,7 @@ class ClaudeRunner:
             not process.timed_out
             and process.exit_code == 0
             and not telemetry.is_error
+            and telemetry.structured_output
         )
 
         return BenchmarkResult(
@@ -539,26 +293,12 @@ class ClaudeRunner:
             metadata={
                 "agent": "claude",
                 "model": self.config.model,
-                "codeintel_enabled": (
-                    self.codeintel_enabled
-                ),
-                "telemetry_format": (
-                    "claude-stream-json"
-                ),
-                "structured_output": (
-                    telemetry.structured_output
-                ),
-                "files_read": (
-                    telemetry.files_read
-                ),
-                "usage": (
-                    telemetry.raw_usage
-                ),
-                "timed_out": (
-                    process.timed_out
-                ),
-                "stderr_present": bool(
-                    process.stderr
-                ),
+                "codeintel_enabled": (self.codeintel_enabled),
+                "telemetry_format": ("claude-stream-json"),
+                "structured_output": (telemetry.structured_output),
+                "files_read": (telemetry.files_read),
+                "usage": (telemetry.raw_usage),
+                "timed_out": (process.timed_out),
+                "stderr_present": bool(process.stderr),
             },
         )

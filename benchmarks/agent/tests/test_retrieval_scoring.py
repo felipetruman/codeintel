@@ -31,10 +31,13 @@ def test_standard_retrieval_metrics():
         expected,
         2,
     ) == pytest.approx(1 / 3)
-    assert reciprocal_rank(
-        returned,
-        expected,
-    ) == 1.0
+    assert (
+        reciprocal_rank(
+            returned,
+            expected,
+        )
+        == 1.0
+    )
 
 
 def test_duplicate_results_are_not_double_counted():

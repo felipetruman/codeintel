@@ -11,10 +11,10 @@ class TokenUsage:
 
     @property
     def total(self) -> int | None:
-        if self.input is None and self.output is None:
+        if self.input is None or self.output is None:
             return None
 
-        return (self.input or 0) + (self.output or 0)
+        return self.input + self.output
 
     def to_dict(self) -> dict[str, int | None]:
         return {
@@ -32,7 +32,7 @@ class BenchmarkResult:
     duration_ms: float
     files: list[str] = field(default_factory=list)
     symbols: list[str] = field(default_factory=list)
-    tool_calls: list[str] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
     tokens: TokenUsage = field(default_factory=TokenUsage)
     stdout: str = ""
     stderr: str = ""

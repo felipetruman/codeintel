@@ -18,5 +18,4 @@ class Runner(Protocol):
         self,
         task: BenchmarkTask,
         repo: Path,
-    ) -> BenchmarkResult:
-        ...
+    ) -> BenchmarkResult: ...

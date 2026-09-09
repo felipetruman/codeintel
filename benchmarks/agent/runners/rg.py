@@ -26,6 +26,40 @@ def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _parse_matches(stdout: str):
+    files: list[str] = []
+    matches = 0
+    parse_errors = 0
+
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            parse_errors += 1
+            continue
+
+        if event.get("type") != "match":
+            continue
+
+        data = event.get("data", {})
+        path_data = data.get(
+            "path",
+            {},
+        )
+
+        path = path_data.get("text")
+
+        if isinstance(path, str):
+            files.append(_normalize_path(path))
+
+        matches += 1
+
+    return files, matches, parse_errors
+
+
 class RgRunner:
     name = "rg"
 
@@ -35,9 +69,7 @@ class RgRunner:
         timeout_seconds: float = 30,
     ) -> None:
         self.binary = binary
-        self.timeout_seconds = (
-            timeout_seconds
-        )
+        self.timeout_seconds = timeout_seconds
 
     def run(
         self,
@@ -50,6 +82,8 @@ class RgRunner:
                 "--json",
                 "--line-number",
                 "--column",
+                "--fixed-strings",
+                "--",
                 task.query,
                 ".",
             ],
@@ -57,37 +91,7 @@ class RgRunner:
             timeout_seconds=self.timeout_seconds,
         )
 
-        files: list[str] = []
-        matches = 0
-        parse_errors = 0
-
-        for line in result.stdout.splitlines():
-            if not line.strip():
-                continue
-
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                parse_errors += 1
-                continue
-
-            if event.get("type") != "match":
-                continue
-
-            data = event.get("data", {})
-            path_data = data.get(
-                "path",
-                {},
-            )
-
-            path = path_data.get("text")
-
-            if isinstance(path, str):
-                files.append(
-                    _normalize_path(path)
-                )
-
-            matches += 1
+        files, matches, parse_errors = _parse_matches(result.stdout)
 
         # rg exit 1 means a valid search with zero matches.
         valid_exit = result.exit_code in {
@@ -98,18 +102,14 @@ class RgRunner:
         return BenchmarkResult(
             runner=self.name,
             task_id=task.id,
-            success=(
-                not result.timed_out
-                and valid_exit
-                and parse_errors == 0
-            ),
+            success=(not result.timed_out and valid_exit and parse_errors == 0),
             duration_ms=result.duration_ms,
             files=_dedupe(files),
             symbols=[],
             tool_calls=[],
             tokens=TokenUsage(),
-            stdout=result.stdout,
-            stderr=result.stderr,
+            stdout="",
+            stderr="",
             exit_code=result.exit_code,
             metadata={
                 "operation": "search",

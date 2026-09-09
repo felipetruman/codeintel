@@ -4,21 +4,14 @@ import importlib
 import json
 from pathlib import Path
 
-
-AGENT_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
+AGENT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def benchmark_module():
     try:
-        return importlib.import_module(
-            "benchmarks.agent.benchmark"
-        )
+        return importlib.import_module("benchmarks.agent.benchmark")
     except ModuleNotFoundError as error:
-        raise AssertionError(
-            "benchmark CLI is not implemented"
-        ) from error
+        raise AssertionError("benchmark CLI is not implemented") from error
 
 
 def test_cli_requires_exactly_one_source_mode():
@@ -40,9 +33,7 @@ def test_cli_requires_exactly_one_source_mode():
         except SystemExit:
             pass
         else:
-            raise AssertionError(
-                "source mode must be mutually exclusive"
-            )
+            raise AssertionError("source mode must be mutually exclusive")
 
 
 def test_rg_synthetic_cli_smoke(
@@ -57,11 +48,7 @@ def test_rg_synthetic_cli_smoke(
             "--corpus",
             "synthetic",
             "--tasks",
-            str(
-                AGENT_ROOT
-                / "tasks"
-                / "locate-symbol.yaml"
-            ),
+            str(AGENT_ROOT / "tasks" / "locate-symbol.yaml"),
             "--runner",
             "rg",
             "--repeat",
@@ -83,34 +70,20 @@ def test_rg_synthetic_cli_smoke(
         "summary.json",
         "summary.csv",
     ]:
-        assert (
-            output / filename
-        ).is_file()
+        assert (output / filename).is_file()
 
-    lines = (
-        output / "results.jsonl"
-    ).read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = (output / "results.jsonl").read_text(encoding="utf-8").splitlines()
 
     assert len(lines) == 1
 
-    result = json.loads(
-        lines[0]
-    )
+    result = json.loads(lines[0])
 
     assert result["runner"] == "rg"
     assert result["success"] is True
 
-    scores = result[
-        "metadata"
-    ][
-        "scores"
-    ]
+    scores = result["metadata"]["scores"]
 
-    assert scores[
-        "file_recall"
-    ] == 1.0
+    assert scores["file_recall"] == 1.0
 
 
 def test_all_selects_deterministic_runners():

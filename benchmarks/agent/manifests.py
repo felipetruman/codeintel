@@ -6,7 +6,6 @@ from typing import Any
 
 import yaml
 
-
 SUPPORTED_TASK_TYPES = frozenset(
     {
         "locate-symbol",
@@ -64,9 +63,7 @@ def _require_string(
     value = data.get(key)
 
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"{key!r} must be a non-empty string"
-        )
+        raise ValueError(f"{key!r} must be a non-empty string")
 
     return value.strip()
 
@@ -81,122 +78,72 @@ def _string_tuple(
         return ()
 
     if not isinstance(value, list):
-        raise ValueError(
-            f"expected.{key} must be a list"
-        )
+        raise ValueError(f"expected.{key} must be a list")
 
     result = []
 
     for item in value:
         if not isinstance(item, str) or not item.strip():
-            raise ValueError(
-                f"expected.{key} entries must be non-empty strings"
-            )
+            raise ValueError(f"expected.{key} entries must be non-empty strings")
 
         result.append(item.strip())
 
     return tuple(result)
 
 
-def load_task(path: Path) -> BenchmarkTask:
-    path = Path(path)
-
-    try:
-        raw = yaml.safe_load(
-            path.read_text(encoding="utf-8")
-        )
-    except OSError as error:
-        raise ValueError(
-            f"cannot read task manifest: {path}"
-        ) from error
-    except yaml.YAMLError as error:
-        raise ValueError(
-            f"invalid YAML task manifest: {path}"
-        ) from error
-
-    if not isinstance(raw, dict):
-        raise ValueError(
-            "task manifest must contain a mapping"
-        )
-
-    unknown = set(raw) - TOP_LEVEL_KEYS
-
+def _mapping(value: Any, allowed: frozenset[str], label: str) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must contain a mapping")
+    unknown = set(value).difference(allowed)
     if unknown:
         raise ValueError(
-            "unknown task fields: "
-            + ", ".join(sorted(unknown))
+            f"unknown {label} fields: " + ", ".join(sorted(map(str, unknown)))
         )
+    return value
 
+
+def _read_yaml(path: Path) -> dict:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ValueError(f"cannot read task manifest: {path}") from error
+    except yaml.YAMLError as error:
+        raise ValueError(f"invalid YAML task manifest: {path}") from error
+
+
+def _blast_radius(value: Any) -> int | None:
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise ValueError("expected.blast_radius must be a non-negative integer or null")
+    if value < 0:
+        raise ValueError("expected.blast_radius must be a non-negative integer or null")
+    return value
+
+
+def _ground_truth(value: Any) -> GroundTruth:
+    raw = _mapping({} if value is None else value, EXPECTED_KEYS, "expected")
+    return GroundTruth(
+        files=_string_tuple(raw, "files"),
+        symbols=_string_tuple(raw, "symbols"),
+        direct_callers=_string_tuple(raw, "direct_callers"),
+        impacted=_string_tuple(raw, "impacted"),
+        blast_radius=_blast_radius(raw.get("blast_radius")),
+    )
+
+
+def load_task(path: Path) -> BenchmarkTask:
+    raw = _mapping(_read_yaml(Path(path)), TOP_LEVEL_KEYS, "task")
     task_type = _require_string(raw, "type")
-
     if task_type not in SUPPORTED_TASK_TYPES:
-        raise ValueError(
-            f"unsupported task type: {task_type}"
-        )
-
-    expected_raw = raw.get("expected", {})
-
-    if expected_raw is None:
-        expected_raw = {}
-
-    if not isinstance(expected_raw, dict):
-        raise ValueError(
-            "expected must contain a mapping"
-        )
-
-    unknown_expected = (
-        set(expected_raw) - EXPECTED_KEYS
-    )
-
-    if unknown_expected:
-        raise ValueError(
-            "unknown expected fields: "
-            + ", ".join(
-                sorted(unknown_expected)
-            )
-        )
-
-    blast_radius = expected_raw.get(
-        "blast_radius"
-    )
-
-    if (
-        blast_radius is not None
-        and (
-            not isinstance(blast_radius, int)
-            or isinstance(blast_radius, bool)
-            or blast_radius < 0
-        )
-    ):
-        raise ValueError(
-            "expected.blast_radius must be a non-negative integer or null"
-        )
-
+        raise ValueError(f"unsupported task type: {task_type}")
     return BenchmarkTask(
         id=_require_string(raw, "id"),
         type=task_type,
         query=_require_string(raw, "query"),
         prompt=_require_string(raw, "prompt"),
         corpus=_require_string(raw, "corpus"),
-        expected=GroundTruth(
-            files=_string_tuple(
-                expected_raw,
-                "files",
-            ),
-            symbols=_string_tuple(
-                expected_raw,
-                "symbols",
-            ),
-            direct_callers=_string_tuple(
-                expected_raw,
-                "direct_callers",
-            ),
-            impacted=_string_tuple(
-                expected_raw,
-                "impacted",
-            ),
-            blast_radius=blast_radius,
-        ),
+        expected=_ground_truth(raw.get("expected")),
     )
 
 
@@ -207,9 +154,7 @@ def load_tasks(path: Path) -> list[BenchmarkTask]:
         return [load_task(path)]
 
     if not path.is_dir():
-        raise ValueError(
-            f"task path does not exist: {path}"
-        )
+        raise ValueError(f"task path does not exist: {path}")
 
     manifests = sorted(
         [
@@ -219,7 +164,4 @@ def load_tasks(path: Path) -> list[BenchmarkTask]:
         key=lambda item: item.name,
     )
 
-    return [
-        load_task(manifest)
-        for manifest in manifests
-    ]
+    return [load_task(manifest) for manifest in manifests]

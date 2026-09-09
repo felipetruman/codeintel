@@ -83,58 +83,28 @@ expected: {{}}
     assert load_task(path).type == task_type
 
 
-def test_rejects_unsupported_task_type(tmp_path):
-    path = write(
-        tmp_path,
-        """
-id: dangerous
-type: shell-command
-query: x
-prompt: x
-corpus: synthetic/rust-cross-file
-expected: {}
-command: rm -rf /
-""",
-    )
+@pytest.mark.parametrize(
+    "patch, message",
+    [
+        ({"type": "shell-command"}, "unsupported"),
+        ({"surprise": True}, "unknown"),
+        ({"expected": {"magic_score": 99}}, "unknown"),
+    ],
+)
+def test_rejects_invalid_manifest_fields(tmp_path, patch, message):
+    import yaml
 
-    with pytest.raises(ValueError):
-        load_task(path)
-
-
-def test_rejects_unknown_top_level_fields(tmp_path):
-    path = write(
-        tmp_path,
-        """
-id: x
-type: locate-symbol
-query: x
-prompt: x
-corpus: synthetic/rust-cross-file
-expected: {}
-surprise: true
-""",
-    )
-
-    with pytest.raises(ValueError, match="unknown"):
-        load_task(path)
-
-
-def test_rejects_unknown_expected_fields(tmp_path):
-    path = write(
-        tmp_path,
-        """
-id: x
-type: locate-symbol
-query: x
-prompt: x
-corpus: synthetic/rust-cross-file
-expected:
-  files: []
-  magic_score: 99
-""",
-    )
-
-    with pytest.raises(ValueError, match="unknown"):
+    data = {
+        "id": "x",
+        "type": "locate-symbol",
+        "query": "x",
+        "prompt": "x",
+        "corpus": "synthetic/rust-cross-file",
+        "expected": {},
+    }
+    data.update(patch)
+    path = write(tmp_path, yaml.safe_dump(data))
+    with pytest.raises(ValueError, match=message):
         load_task(path)
 
 
@@ -161,16 +131,12 @@ expected: {{}}
 
 
 def test_repository_manifests_are_valid():
-    root = (
-        Path(__file__).resolve().parents[1]
-    )
+    root = Path(__file__).resolve().parents[1]
 
     tasks = load_tasks(root / "tasks")
 
     assert len(tasks) == 4
-    assert {
-        task.type for task in tasks
-    } == {
+    assert {task.type for task in tasks} == {
         "locate-symbol",
         "relevant-files",
         "impact-analysis",

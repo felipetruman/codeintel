@@ -17,17 +17,11 @@ def test_graph_metrics():
         expected_blast_radius=2,
     )
 
-    assert metrics[
-        "direct_caller_precision"
-    ] == pytest.approx(0.5)
+    assert metrics["direct_caller_precision"] == pytest.approx(0.5)
 
-    assert metrics[
-        "direct_caller_recall"
-    ] == pytest.approx(0.5)
+    assert metrics["direct_caller_recall"] == pytest.approx(0.5)
 
-    assert metrics[
-        "blast_radius_error"
-    ] == 1
+    assert metrics["blast_radius_error"] == 1
 
 
 def test_graph_metrics_preserve_missing_blast_radius():
@@ -38,6 +32,4 @@ def test_graph_metrics_preserve_missing_blast_radius():
         expected_blast_radius=2,
     )
 
-    assert metrics[
-        "blast_radius_error"
-    ] is None
+    assert metrics["blast_radius_error"] is None

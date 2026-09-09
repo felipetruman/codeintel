@@ -67,13 +67,9 @@ def test_unknown_runner_is_rejected():
 
 
 def test_real_agent_detection():
-    assert contains_real_agents(
-        ["rg", "codeintel"]
-    ) is False
+    assert contains_real_agents(["rg", "codeintel"]) is False
 
-    assert contains_real_agents(
-        ["rg", "claude"]
-    ) is True
+    assert contains_real_agents(["rg", "claude"]) is True
 
     assert AGENT_RUNNERS == frozenset(
         {

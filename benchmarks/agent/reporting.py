@@ -51,86 +51,46 @@ def _round(
     )
 
 
-def summarize(
-    results: list[BenchmarkResult],
-) -> dict[str, Any]:
-    grouped: dict[
-        str,
-        list[BenchmarkResult],
-    ] = {}
+def _score_values(entries: list[BenchmarkResult]) -> dict[str, list[float]]:
+    values = {}
+    for result in entries:
+        scores = result.metadata.get("scores", {})
+        if isinstance(scores, dict):
+            _collect_scores(values, scores)
+    return values
 
+
+def _collect_scores(values: dict, scores: dict) -> None:
+    for key, value in scores.items():
+        values.setdefault(key, [])
+        if type(value) in (int, float):
+            values[key].append(float(value))
+
+
+def _runner_summary(entries: list[BenchmarkResult]) -> dict:
+    values = _score_values(entries)
+    successes = sum(result.success for result in entries)
+    return {
+        "runs": len(entries),
+        "successes": successes,
+        "success_rate": _round(successes / len(entries)),
+        "avg_duration_ms": _round(mean(result.duration_ms for result in entries)),
+        "metrics": {
+            key: _round(mean(items)) if items else None
+            for key, items in sorted(values.items())
+        },
+    }
+
+
+def summarize(results: list[BenchmarkResult]) -> dict[str, Any]:
+    grouped = {}
     for result in results:
-        grouped.setdefault(
-            result.runner,
-            [],
-        ).append(result)
-
-    runners: dict[str, Any] = {}
-
-    for runner in sorted(grouped):
-        entries = grouped[runner]
-
-        metric_values: dict[
-            str,
-            list[float],
-        ] = {}
-
-        for result in entries:
-            scores = result.metadata.get(
-                "scores",
-                {},
-            )
-
-            if not isinstance(
-                scores,
-                dict,
-            ):
-                continue
-
-            for key, value in scores.items():
-                if (
-                    isinstance(value, (int, float))
-                    and not isinstance(
-                        value,
-                        bool,
-                    )
-                ):
-                    metric_values.setdefault(
-                        key,
-                        [],
-                    ).append(float(value))
-
-        metrics = {
-            key: _round(mean(values))
-            for key, values in sorted(
-                metric_values.items()
-            )
-            if values
-        }
-
-        successes = sum(
-            result.success
-            for result in entries
-        )
-
-        runners[runner] = {
-            "runs": len(entries),
-            "successes": successes,
-            "success_rate": _round(
-                successes / len(entries)
-            ),
-            "avg_duration_ms": _round(
-                mean(
-                    result.duration_ms
-                    for result in entries
-                )
-            ),
-            "metrics": metrics,
-        }
-
+        grouped.setdefault(result.runner, []).append(result)
     return {
         "total_results": len(results),
-        "runners": runners,
+        "runners": {
+            name: _runner_summary(entries) for name, entries in sorted(grouped.items())
+        },
     }
 
 
@@ -159,14 +119,7 @@ def _csv_rows(
     )
 
     metric_names = sorted(
-        {
-            metric
-            for data in runners.values()
-            for metric in data.get(
-                "metrics",
-                {}
-            )
-        }
+        {metric for data in runners.values() for metric in data.get("metrics", {})}
     )
 
     fields = [
@@ -186,15 +139,9 @@ def _csv_rows(
         row: dict[str, Any] = {
             "runner": runner,
             "runs": data["runs"],
-            "successes": data[
-                "successes"
-            ],
-            "success_rate": data[
-                "success_rate"
-            ],
-            "avg_duration_ms": data[
-                "avg_duration_ms"
-            ],
+            "successes": data["successes"],
+            "success_rate": data["success_rate"],
+            "avg_duration_ms": data["avg_duration_ms"],
         }
 
         metrics = data.get(
@@ -226,12 +173,8 @@ def write_run(
     )
 
     run_path = output_dir / "run.json"
-    results_path = (
-        output_dir / "results.jsonl"
-    )
-    summary_path = (
-        output_dir / "summary.json"
-    )
+    results_path = output_dir / "results.jsonl"
+    summary_path = output_dir / "summary.json"
     csv_path = output_dir / "summary.csv"
 
     _write_json(
@@ -260,9 +203,7 @@ def write_run(
         summary,
     )
 
-    fields, rows = _csv_rows(
-        summary
-    )
+    fields, rows = _csv_rows(summary)
 
     with csv_path.open(
         "w",

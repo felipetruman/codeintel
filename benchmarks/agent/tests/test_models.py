@@ -25,7 +25,10 @@ def test_result_serializes_missing_tokens_as_null():
 
 
 def test_token_total():
-    assert TokenUsage(
-        input=100,
-        output=20,
-    ).total == 120
+    assert (
+        TokenUsage(
+            input=100,
+            output=20,
+        ).total
+        == 120
+    )

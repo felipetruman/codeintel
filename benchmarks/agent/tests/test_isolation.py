@@ -6,13 +6,9 @@ from pathlib import Path
 
 def isolation_module():
     try:
-        return importlib.import_module(
-            "benchmarks.agent.isolation"
-        )
+        return importlib.import_module("benchmarks.agent.isolation")
     except ModuleNotFoundError as error:
-        raise AssertionError(
-            "repository isolation is not implemented"
-        ) from error
+        raise AssertionError("repository isolation is not implemented") from error
 
 
 def test_isolated_repository_never_mutates_source(
@@ -33,20 +29,16 @@ def test_isolated_repository_never_mutates_source(
 
     with module.isolated_repository(source) as isolated:
         assert isolated != source
-        assert (
-            isolated / "src" / "main.py"
-        ).read_text(encoding="utf-8") == "VALUE = 1\n"
+        assert (isolated / "src" / "main.py").read_text(
+            encoding="utf-8"
+        ) == "VALUE = 1\n"
 
-        (
-            isolated / "src" / "main.py"
-        ).write_text(
+        (isolated / "src" / "main.py").write_text(
             "VALUE = 999\n",
             encoding="utf-8",
         )
 
-        (
-            isolated / "generated.txt"
-        ).write_text(
+        (isolated / "generated.txt").write_text(
             "temporary\n",
             encoding="utf-8",
         )
@@ -55,13 +47,9 @@ def test_isolated_repository_never_mutates_source(
 
     assert after == before
 
-    assert (
-        source / "src" / "main.py"
-    ).read_text(encoding="utf-8") == "VALUE = 1\n"
+    assert (source / "src" / "main.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
-    assert not (
-        source / "generated.txt"
-    ).exists()
+    assert not (source / "generated.txt").exists()
 
 
 def test_isolation_excludes_runtime_state(
@@ -84,11 +72,7 @@ def test_isolation_excludes_runtime_state(
     )
 
     (source / ".codeintel").mkdir()
-    (
-        source
-        / ".codeintel"
-        / "manifest.json"
-    ).write_text(
+    (source / ".codeintel" / "manifest.json").write_text(
         "{}\n",
         encoding="utf-8",
     )
@@ -96,9 +80,7 @@ def test_isolation_excludes_runtime_state(
     with module.isolated_repository(source) as isolated:
         assert (isolated / "app.py").is_file()
         assert not (isolated / ".git").exists()
-        assert not (
-            isolated / ".codeintel"
-        ).exists()
+        assert not (isolated / ".codeintel").exists()
 
 
 def test_repository_digest_ignores_git_and_codeintel(

@@ -27,14 +27,9 @@ from benchmarks.agent.scheduler import (
     run_matrix,
 )
 
+AGENT_ROOT = Path(__file__).resolve().parent
 
-AGENT_ROOT = Path(
-    __file__
-).resolve().parent
-
-REPOSITORY_ROOT = (
-    AGENT_ROOT.parents[1]
-)
+REPOSITORY_ROOT = AGENT_ROOT.parents[1]
 
 DETERMINISTIC_RUNNERS = (
     "rg",
@@ -45,94 +40,38 @@ DETERMINISTIC_RUNNERS = (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codeintel-agent-benchmark",
-        description=(
-            "Deterministic and agentic benchmark "
-            "harness for CodeIntel."
-        ),
+        description="Deterministic and agentic benchmark harness for CodeIntel.",
     )
-
-    source = parser.add_mutually_exclusive_group(
-        required=True
-    )
-
+    source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
-        "--corpus",
-        choices=["synthetic"],
-        help="Use built-in synthetic corpora.",
+        "--corpus", choices=["synthetic"], help="Use built-in synthetic corpora."
     )
-
-    source.add_argument(
-        "--repo",
-        type=Path,
-        help="Benchmark an arbitrary repository.",
-    )
-
+    source.add_argument("--repo", type=Path, help="Benchmark an arbitrary repository.")
     parser.add_argument(
         "--tasks",
         type=Path,
         default=AGENT_ROOT / "tasks",
-        help=(
-            "Task manifest file or directory."
-        ),
+        help="Task manifest file or directory.",
     )
-
     parser.add_argument(
         "--runner",
         action="append",
         choices=DETERMINISTIC_RUNNERS,
         default=[],
-        help=(
-            "Runner to execute. Repeatable."
-        ),
+        help="Runner to execute. Repeatable.",
     )
-
     parser.add_argument(
         "--all",
         action="store_true",
         dest="all_runners",
-        help=(
-            "Run all currently available runners."
-        ),
+        help="Run all currently available runners.",
     )
-
-    parser.add_argument(
-        "--repeat",
-        type=int,
-        default=1,
-    )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=1337,
-    )
-
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-    )
-
-    parser.add_argument(
-        "--codeintel-mode",
-        choices=[
-            "cold",
-            "warm",
-        ],
-        default="warm",
-    )
-
-    parser.add_argument(
-        "--codeintel-binary",
-        default="codeintel",
-    )
-
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=30.0,
-    )
-
+    parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--codeintel-mode", choices=["cold", "warm"], default="warm")
+    parser.add_argument("--codeintel-binary", default="codeintel")
+    parser.add_argument("--timeout", type=float, default=30.0)
     return parser
 
 
@@ -141,21 +80,11 @@ def resolve_runners(
     all_runners: bool,
 ) -> list[str]:
     if all_runners:
-        return list(
-            DETERMINISTIC_RUNNERS
-        )
+        return list(DETERMINISTIC_RUNNERS)
 
-    selected = (
-        explicit
-        if explicit
-        else list(
-            DETERMINISTIC_RUNNERS
-        )
-    )
+    selected = explicit if explicit else list(DETERMINISTIC_RUNNERS)
 
-    return list(
-        dict.fromkeys(selected)
-    )
+    return list(dict.fromkeys(selected))
 
 
 def _safe_version(
@@ -174,10 +103,7 @@ def _safe_version(
     ):
         return None
 
-    if (
-        result.timed_out
-        or result.exit_code != 0
-    ):
+    if result.timed_out or result.exit_code != 0:
         return None
 
     value = result.stdout.strip()
@@ -198,15 +124,9 @@ def _git_sha() -> str | None:
 def _make_run_id(
     seed: int,
 ) -> str:
-    stamp = datetime.now(
-        timezone.utc
-    ).strftime(
-        "%Y%m%dT%H%M%SZ"
-    )
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    return (
-        f"{stamp}-seed{seed}"
-    )
+    return f"{stamp}-seed{seed}"
 
 
 def _metadata(
@@ -217,9 +137,7 @@ def _metadata(
 ) -> RunMetadata:
     return RunMetadata(
         run_id=run_id,
-        timestamp=datetime.now(
-            timezone.utc
-        ).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         codeintel_version=_safe_version(
             [
                 codeintel_binary,
@@ -233,9 +151,7 @@ def _metadata(
         claude_version=None,
         codex_version=None,
         seed=seed,
-        runners=tuple(
-            runner_names
-        ),
+        runners=tuple(runner_names),
     )
 
 
@@ -244,36 +160,26 @@ def _source_resolver(
     repo: Path | None,
 ):
     if corpus == "synthetic":
+
         def resolve(
             task: BenchmarkTask,
         ) -> Path:
-            source = (
-                AGENT_ROOT
-                / "corpus"
-                / task.corpus
-            )
+            source = AGENT_ROOT / "corpus" / task.corpus
 
             if not source.is_dir():
-                raise ValueError(
-                    "synthetic corpus does not exist: "
-                    f"{source}"
-                )
+                raise ValueError("synthetic corpus does not exist: " f"{source}")
 
             return source
 
         return resolve
 
     if repo is None:
-        raise ValueError(
-            "repository path is required"
-        )
+        raise ValueError("repository path is required")
 
     repository = repo.resolve()
 
     if not repository.is_dir():
-        raise ValueError(
-            f"repository does not exist: {repository}"
-        )
+        raise ValueError(f"repository does not exist: {repository}")
 
     def resolve_real(
         _task: BenchmarkTask,
@@ -305,9 +211,7 @@ def _runner_instances(
             )
 
         else:
-            raise ValueError(
-                f"unsupported runner: {name}"
-            )
+            raise ValueError(f"unsupported runner: {name}")
 
     return runners
 
@@ -319,41 +223,29 @@ def main(
     args = parser.parse_args(argv)
 
     if args.repeat <= 0:
-        parser.error(
-            "--repeat must be greater than zero"
-        )
+        parser.error("--repeat must be greater than zero")
 
     if args.timeout <= 0:
-        parser.error(
-            "--timeout must be greater than zero"
-        )
+        parser.error("--timeout must be greater than zero")
 
     runner_names = resolve_runners(
         explicit=args.runner,
         all_runners=args.all_runners,
     )
 
-    tasks = load_tasks(
-        args.tasks
-    )
+    tasks = load_tasks(args.tasks)
 
     if not tasks:
-        parser.error(
-            "no benchmark tasks found"
-        )
+        parser.error("no benchmark tasks found")
 
-    run_id = _make_run_id(
-        args.seed
-    )
+    return _execute(args, runner_names, tasks)
+
+
+def _execute(args, runner_names, tasks) -> int:
+    run_id = _make_run_id(args.seed)
 
     output = (
-        args.output
-        if args.output is not None
-        else (
-            AGENT_ROOT
-            / "results"
-            / run_id
-        )
+        args.output if args.output is not None else (AGENT_ROOT / "results" / run_id)
     )
 
     runners = _runner_instances(
@@ -388,38 +280,19 @@ def main(
         results,
     )
 
-    summary = (
-        paths["summary"]
-    )
+    summary = paths["summary"]
 
-    print(
-        f"run_id: {run_id}"
-    )
+    print(f"run_id: {run_id}")
 
-    print(
-        f"results: {paths['results']}"
-    )
+    print(f"results: {paths['results']}")
 
-    print(
-        f"summary: {summary}"
-    )
+    print(f"summary: {summary}")
 
-    successful = sum(
-        result.success
-        for result in results
-    )
+    successful = sum(result.success for result in results)
 
-    print(
-        "success: "
-        f"{successful}/{len(results)}"
-    )
+    print("success: " f"{successful}/{len(results)}")
 
-    return (
-        0
-        if successful
-        == len(results)
-        else 1
-    )
+    return 0 if successful == len(results) else 1
 
 
 if __name__ == "__main__":

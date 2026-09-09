@@ -26,11 +26,7 @@ def test_process_preserves_nonzero_exit_code(tmp_path):
         [
             sys.executable,
             "-c",
-            (
-                "import sys; "
-                "print('boom', file=sys.stderr); "
-                "raise SystemExit(7)"
-            ),
+            ("import sys; " "print('boom', file=sys.stderr); " "raise SystemExit(7)"),
         ],
         cwd=tmp_path,
         timeout_seconds=5,
@@ -67,9 +63,7 @@ def test_process_rejects_empty_argv(tmp_path):
     except ValueError as exc:
         assert "argv" in str(exc)
     else:
-        raise AssertionError(
-            "empty argv must raise ValueError"
-        )
+        raise AssertionError("empty argv must raise ValueError")
 
 
 def test_process_rejects_invalid_timeout(tmp_path):
@@ -82,6 +76,4 @@ def test_process_rejects_invalid_timeout(tmp_path):
     except ValueError as exc:
         assert "timeout" in str(exc)
     else:
-        raise AssertionError(
-            "timeout <= 0 must raise ValueError"
-        )
+        raise AssertionError("timeout <= 0 must raise ValueError")

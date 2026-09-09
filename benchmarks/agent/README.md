@@ -213,3 +213,31 @@ The benchmark must not alter the CodeIntel Rust runtime.
 The feature is implemented entirely under:
 
     benchmarks/agent/
+
+## Isolation and evidence limits
+
+Real-agent execution requires Linux and `bwrap` (Bubblewrap). The runner mounts
+repository source read-only, provides a separate writable `.codeintel` cache,
+and uses a temporary home without user or project agent configuration. Only
+standard system paths, the selected agent executable, its required helper,
+authentication material, and the selected schema are exposed. The enhanced arm
+also receives the configured CodeIntel binary. Unsupported hosts fail closed.
+No model call is needed to test this boundary: sandbox tests use Python probes.
+
+External, dangling, and excluded-state symlinks are rejected before copying.
+Internal absolute symlinks are rebased to the snapshot. A task snapshot is frozen
+once for all repetitions and runners; source mutations during a run fail it.
+Process output is capped at 8 MiB combined, timeouts are finite, and the process
+group is killed even when its leader exits before its children.
+
+Success requires valid, completed structured agent output. Missing token
+components keep the total unknown. Claude file-read telemetry includes only
+successful tool results and is a lower bound; absent evidence remains `null`.
+Codex file reads remain `null`. Reports omit raw process stdout/stderr, and usage
+metadata retains only recognized non-negative numeric counters.
+
+A/B ordering reverses each repetition pair, including the full six-runner matrix.
+Use an even repetition count to balance order. This compares each provider with
+and without CodeIntel; it does not establish an unbiased Claude-versus-Codex
+ranking. No agent performance or token-saving result is claimed without running
+the opt-in experiment with pinned models and suitable task ground truth.

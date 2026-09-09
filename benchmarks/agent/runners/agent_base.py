@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
+import math
 from typing import Any
 
 from benchmarks.agent.manifests import (
@@ -13,10 +14,10 @@ from benchmarks.agent.models import (
     BenchmarkResult,
     TokenUsage,
 )
+from benchmarks.agent.runners.agent_protocol import nonnegative_int
 from benchmarks.agent.process import (
     run_process,
 )
-
 
 ALLOWED_PLACEHOLDERS = frozenset(
     {
@@ -33,9 +34,7 @@ SHELL_EXECUTABLES = frozenset(
     }
 )
 
-PLACEHOLDER_PATTERN = re.compile(
-    r"\{([A-Za-z_][A-Za-z0-9_]*)\}"
-)
+PLACEHOLDER_PATTERN = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 @dataclass(frozen=True)
@@ -49,69 +48,31 @@ class AgentCommand:
 def _placeholders(
     value: str,
 ) -> set[str]:
-    return set(
-        PLACEHOLDER_PATTERN.findall(
-            value
-        )
-    )
+    return set(PLACEHOLDER_PATTERN.findall(value))
 
 
-def validate_command(
-    command: AgentCommand,
-) -> None:
-    if not command.name.strip():
-        raise ValueError(
-            "agent command name must not be empty"
-        )
-
-    if not command.argv:
-        raise ValueError(
-            "agent argv must not be empty"
-        )
-
-    if command.timeout_seconds <= 0:
-        raise ValueError(
-            "agent timeout must be greater than zero"
-        )
-
-    executable = Path(
-        command.argv[0]
-    ).name
-
-    if (
-        executable in SHELL_EXECUTABLES
-        and len(command.argv) >= 2
-        and command.argv[1] == "-c"
-    ):
-        raise ValueError(
-            "shell wrapper commands are not allowed"
-        )
-
-    placeholders: set[str] = set()
-
-    for argument in command.argv:
-        placeholders.update(
-            _placeholders(argument)
-        )
-
-    unknown = (
-        placeholders
-        - ALLOWED_PLACEHOLDERS
-    )
-
+def _validate_placeholders(argv: tuple[str, ...]) -> None:
+    placeholders = set().union(*(_placeholders(argument) for argument in argv))
+    unknown = placeholders - ALLOWED_PLACEHOLDERS
     if unknown:
         raise ValueError(
-            "unknown command placeholder(s): "
-            + ", ".join(
-                sorted(unknown)
-            )
+            "unknown command placeholder(s): " + ", ".join(sorted(unknown))
         )
-
     if "prompt" not in placeholders:
-        raise ValueError(
-            "agent command must contain "
-            "the {prompt} placeholder"
-        )
+        raise ValueError("agent command must contain the {prompt} placeholder")
+
+
+def validate_command(command: AgentCommand) -> None:
+    if not command.name.strip():
+        raise ValueError("agent command name must not be empty")
+    if not command.argv:
+        raise ValueError("agent argv must not be empty")
+    if not math.isfinite(command.timeout_seconds) or command.timeout_seconds <= 0:
+        raise ValueError("agent timeout must be finite and greater than zero")
+    executable = Path(command.argv[0]).name
+    if executable in SHELL_EXECUTABLES:
+        raise ValueError("shell wrapper commands are not allowed")
+    _validate_placeholders(command.argv)
 
 
 def render_command(
@@ -121,20 +82,11 @@ def render_command(
 ) -> list[str]:
     validate_command(command)
 
-    repository = str(
-        Path(repo).resolve()
-    )
+    repository = str(Path(repo).resolve())
 
+    values = {"prompt": prompt, "repo": repository}
     return [
-        argument
-        .replace(
-            "{prompt}",
-            prompt,
-        )
-        .replace(
-            "{repo}",
-            repository,
-        )
+        PLACEHOLDER_PATTERN.sub(lambda match: values[match.group(1)], argument)
         for argument in command.argv
     ]
 
@@ -151,10 +103,7 @@ def _string_list(
     result = []
 
     for item in value:
-        if (
-            isinstance(item, str)
-            and item not in result
-        ):
+        if isinstance(item, str) and item not in result:
             result.append(item)
 
     return result
@@ -191,19 +140,8 @@ def _token_usage(
         value.get("output"),
     )
 
-    input_tokens = (
-        raw_input
-        if isinstance(raw_input, int)
-        and not isinstance(raw_input, bool)
-        else None
-    )
-
-    output_tokens = (
-        raw_output
-        if isinstance(raw_output, int)
-        and not isinstance(raw_output, bool)
-        else None
-    )
+    input_tokens = nonnegative_int(raw_input)
+    output_tokens = nonnegative_int(raw_output)
 
     return TokenUsage(
         input=input_tokens,
@@ -257,14 +195,10 @@ class GenericAgentRunner:
         process = run_process(
             argv,
             cwd=repo,
-            timeout_seconds=(
-                self.command.timeout_seconds
-            ),
+            timeout_seconds=(self.command.timeout_seconds),
         )
 
-        payload = _json_payload(
-            process.stdout
-        )
+        payload = _json_payload(process.stdout)
 
         files: list[str] = []
         symbols: list[str] = []
@@ -276,27 +210,16 @@ class GenericAgentRunner:
         if payload is not None:
             telemetry_format = "json"
 
-            files = _string_list(
-                payload.get("files")
-            )
+            files = _string_list(payload.get("files"))
 
-            symbols = _string_list(
-                payload.get("symbols")
-            )
+            symbols = _string_list(payload.get("symbols"))
 
-            tool_calls = _tool_calls(
-                payload.get(
-                    "tool_calls"
-                )
-            )
+            tool_calls = _tool_calls(payload.get("tool_calls"))
 
-            tokens = _token_usage(
-                payload.get("usage")
-            )
+            tokens = _token_usage(payload.get("usage"))
 
         success = (
-            not process.timed_out
-            and process.exit_code == 0
+            not process.timed_out and process.exit_code == 0 and payload is not None
         )
 
         return BenchmarkResult(
@@ -308,16 +231,12 @@ class GenericAgentRunner:
             symbols=symbols,
             tool_calls=tool_calls,
             tokens=tokens,
-            stdout=process.stdout,
-            stderr=process.stderr,
+            stdout="",
+            stderr="",
             exit_code=process.exit_code,
             metadata={
                 "agent": self.command.name,
-                "codeintel_enabled": (
-                    self.command.codeintel_enabled
-                ),
-                "telemetry_format": (
-                    telemetry_format
-                ),
+                "codeintel_enabled": (self.command.codeintel_enabled),
+                "telemetry_format": (telemetry_format),
             },
         )
