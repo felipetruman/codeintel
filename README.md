@@ -2,6 +2,8 @@
 
 # CodeIntel
 
+**English** · [Português (Brasil)](README.pt-BR.md)
+
 ### Find the right code. Understand the impact. Make the change.
 
 Local code intelligence for developers and coding agents.<br>
