@@ -1,0 +1,16 @@
+id: rust-qualified-path
+corpus: synthetic/rust-cross-file
+symbol: qualified_payment
+definition:
+  file: src/payment.rs
+expected_direct_callers:
+  - qualified_entry
+known_v0_5_behavior:
+  description: >
+    The qualified Rust free-function call
+    crate::payment::qualified_payment() may be classified
+    conservatively as external_or_method and therefore miss
+    the graph edge to qualified_entry.
+  benchmark_goal: >
+    Preserve this ground truth so future CodeIntel releases
+    can measure whether qualified-path resolution improves.

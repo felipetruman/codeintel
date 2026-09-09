@@ -1,0 +1,14 @@
+id: python-process-payment-change
+type: change-planning
+query: process_payment
+prompt: Plan a change to process_payment and identify the Python files affected by that change.
+corpus: synthetic/python-dependency
+expected:
+  files:
+    - payment.py
+    - checkout.py
+    - routes.py
+  symbols:
+    - process_payment
+    - checkout
+    - route_checkout

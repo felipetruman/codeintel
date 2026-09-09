@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeIntel Agent Benchmark Result",
+  "type": "object",
+  "required": [
+    "runner",
+    "task_id",
+    "success",
+    "duration_ms",
+    "files",
+    "symbols",
+    "tool_calls",
+    "tokens",
+    "stdout",
+    "stderr",
+    "exit_code",
+    "metadata"
+  ],
+  "properties": {
+    "runner": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tool_calls": {
+      "type": "array"
+    },
+    "tokens": {
+      "type": "object",
+      "required": [
+        "input",
+        "output",
+        "total"
+      ],
+      "properties": {
+        "input": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

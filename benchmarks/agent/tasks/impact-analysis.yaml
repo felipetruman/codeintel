@@ -1,0 +1,18 @@
+id: rust-process-payment-impact
+type: impact-analysis
+query: process_payment
+prompt: Determine the upstream impact of changing process_payment.
+corpus: synthetic/rust-cross-file
+expected:
+  files:
+    - src/payment.rs
+    - src/checkout.rs
+    - src/api.rs
+  symbols:
+    - process_payment
+  direct_callers:
+    - checkout
+  impacted:
+    - checkout
+    - submit_order
+  blast_radius: 2
