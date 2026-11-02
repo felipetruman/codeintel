@@ -15,3 +15,7 @@
 # Agent benchmark generated results
 /benchmarks/agent/results/*
 !/benchmarks/agent/results/.gitkeep
+
+# Optional Python integration workflows
+/integrations/**/__pycache__/
+/integrations/**/*.py[cod]
