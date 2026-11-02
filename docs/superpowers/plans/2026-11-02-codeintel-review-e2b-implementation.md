@@ -36,7 +36,7 @@
 - [x] Escrever testes para refs, caminhos, arquivos alterados, falhas de ferramenta e schema.
 - [x] Executar testes e observar RED (módulo inexistente).
 - [x] Implementar comparação Git sem shell e contexto CodeIntel.
-- [x] Executar testes locais; nove casos verdes.
+- [x] Executar testes locais; nove casos verdes inicialmente, 12 casos após revisão de head/dirty checkout e score não finito.
 - [ ] Confirmar CI remoto e revisão independente antes de merge.
 
 ### Task 2: CLI e testes no CI
@@ -47,7 +47,7 @@
 
 - [x] Escrever testes CLI RED.
 - [x] Implementar `argparse` e mensagens seguras de erro.
-- [x] Executar suite local: 11 testes verdes.
+- [x] Executar suite local: 14 testes verdes.
 - [ ] Validar workflow no GitHub Actions e checar diff do PR.
 
 ### Task 3: Tickets idempotentes e E2B isolada (pendente)

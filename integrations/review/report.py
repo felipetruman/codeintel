@@ -7,6 +7,7 @@ repository is untrusted. It is safe to unit-test on synthetic local git repos.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import subprocess
 from typing import Any, Sequence
@@ -57,7 +58,7 @@ def _context_paths(repo: Path, payload: Any, max_context: int) -> list[dict[str,
             continue
         seen.add(name)
         score = item.get("score")
-        result.append({"path": name, "score": score if type(score) in (int, float) else None})
+        result.append({"path": name, "score": score if (type(score) is int or (type(score) is float and math.isfinite(score))) else None})
         if len(result) >= max_context:
             break
     return result
@@ -77,6 +78,11 @@ def build_review_report(repo: Path, base: str, head: str, *,
     try:
         base_sha = _revision(root, base)
         head_sha = _revision(root, head)
+        if _revision(root, "HEAD") != head_sha:
+            raise ReviewError("checked-out HEAD differs from requested head commit")
+        if _run(["git", "status", "--porcelain", "-z", "--untracked-files=normal"],
+                cwd=root, timeout=30):
+            raise ReviewError("checkout is dirty; use a clean isolated checkout")
         changed_raw = _run(["git", "diff", "--no-ext-diff", "--name-only", "-z",
                             "--diff-filter=ACMRT", base_sha, head_sha, "--"], cwd=root, timeout=30)
         paths = [part.decode("utf-8", "surrogateescape") for part in changed_raw.split(b"\x00") if part]

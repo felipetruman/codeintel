@@ -104,6 +104,22 @@ print(json.dumps({'files': [
         result = self.report(self.commit())
         self.assertEqual([x["path"] for x in result["context_files"]], ["service.py"])
 
+    def test_head_must_match_checked_out_commit(self):
+        self.commit()
+        with self.assertRaises(ReviewError):
+            self.report(self.base)
+
+    def test_dirty_checkout_is_rejected(self):
+        head = self.commit()
+        (self.repo / "service.py").write_text("uncommitted edit\n")
+        with self.assertRaises(ReviewError):
+            self.report(head)
+
+    def test_nonfinite_context_score_is_not_emitted(self):
+        self.fake.write_text("print('{\"files\":[{\"path\":\"service.py\",\"score\":NaN}]}')\n")
+        head = self.commit()
+        self.assertIsNone(self.report(head)["context_files"][0]["score"])
+
     def test_too_many_changed_files_is_rejected(self):
         self.commit("one.py")
         with self.assertRaises(ReviewError):

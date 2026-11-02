@@ -26,7 +26,7 @@ O modelo operacional futuro combina autorização/eventos/Tickets (DSH), investi
 ## Escopo implementado (primeiro PR)
 
 1. CLI `python3 -m integrations.review --repo <checkout> --base <sha> --head <sha>`.
-2. Resolver refs existentes localmente, coletar arquivos via `git diff -z`, sem shell; limite de 200 arquivos.
+2. Resolver refs existentes localmente, exigir HEAD correspondente e checkout limpo, coletar arquivos via `git diff -z`, sem shell; limite de 200 arquivos.
 3. Consumir `codeintel context` uma vez e validar caminho relativo e existência sob a raiz; máximo 10 arquivos.
 4. Relatório JSON schema 1 com SHAs, `changed_files`, `context_files`, `findings: []`, `validated: false`.
 5. Falha explícita, sem JSON de sucesso, para refs inválidos, erro de ferramenta e resposta malformada.

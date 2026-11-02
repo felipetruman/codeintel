@@ -9,7 +9,7 @@ cargo install --path . --locked
 python3 -m integrations.review --repo /path/to/checkout --base BASE_COMMIT --head HEAD_COMMIT
 ```
 
-Both commits must exist in that checkout. The JSON report includes `base_sha`, `head_sha`, `changed_files`, ranked `context_files`, and `findings: []`, `validated: false`.
+Both commits must exist in that checkout. The checkout must be clean and its HEAD must equal the requested head commit. The JSON report includes `base_sha`, `head_sha`, `changed_files`, ranked `context_files`, and `findings: []`, `validated: false`.
 
 Run offline unit tests:
 
